@@ -7,10 +7,10 @@ internal static class TypeBasedTransformerExtensions
 {
     /// <summary>
     /// Supports disposing of factory-based transformers that implement <see cref="IDisposable"/> or <see cref="IAsyncDisposable"/>
-    /// after a given OpenAPI document generation request has been completed.
+    /// after a given AsyncApi document generation request has been completed.
     /// </summary>
     /// <remarks>
-    /// This method is intended to be invoked on <see cref="TypeBasedAsyncApiOperationTransformer" /> and <see cref="TypeBasedOpenApiSchemaTransformer" />.
+    /// This method is intended to be invoked on <see cref="TypeBasedAsyncApiOperationTransformer" /> and <see cref="TypeBasedAsyncApiSchemaTransformer" />.
     /// instances which can be invoked multiple times within the same document generation request.
     /// </remarks>
     public static async Task FinalizeTransformer<ITransformer>(this ITransformer transformer)

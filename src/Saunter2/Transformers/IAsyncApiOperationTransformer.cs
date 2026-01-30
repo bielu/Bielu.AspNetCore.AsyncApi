@@ -6,12 +6,12 @@ using ByteBard.AsyncAPI.Models;
 namespace Saunter2.Transformers;
 
 /// <summary>
-/// Represents a transformer that can be used to modify an OpenAPI operation.
+/// Represents a transformer that can be used to modify an AsyncApi operation.
 /// </summary>
 public interface IAsyncApiOperationTransformer
 {
     /// <summary>
-    /// Transforms the specified OpenAPI operation.
+    /// Transforms the specified AsyncApi operation.
     /// </summary>
     /// <param name="operation">The <see cref="context"/> to modify.</param>
     /// <param name="context">The <see cref="cancellationToken"/> associated with the <see paramref="operation"/>.</param>

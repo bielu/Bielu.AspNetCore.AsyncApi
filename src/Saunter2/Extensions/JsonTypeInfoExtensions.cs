@@ -4,6 +4,7 @@
 using System.IO.Pipelines;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.AspNetCore.Http;
 using Saunter2.Services;
 
 namespace Saunter2.Extensions;
@@ -37,7 +38,7 @@ internal static class JsonTypeInfoExtensions
 
     /// <summary>
     /// The following method maps a JSON type to a schema reference ID that will eventually be used as the
-    /// schema reference name in the OpenAPI document. These schema reference names are considered URL fragments
+    /// schema reference name in the AsyncApi document. These schema reference names are considered URL fragments
     /// in the context of JSON Schema's $ref keyword and must comply with the character restrictions of URL fragments.
     /// In particular, the generated strings can contain alphanumeric characters and a subset of special symbols. This
     /// means that certain symbols that appear commonly in .NET type names like ">" are not permitted in the
@@ -53,7 +54,7 @@ internal static class JsonTypeInfoExtensions
     {
         var type = jsonTypeInfo.Type;
         var underlyingType = Nullable.GetUnderlyingType(type);
-        if (isTopLevel && OpenApiConstants.PrimitiveTypes.Contains(underlyingType ?? type))
+        if (isTopLevel && AsyncApiConstants.PrimitiveTypes.Contains(underlyingType ?? type))
         {
             return null;
         }

@@ -10,24 +10,33 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
 using System.Text.Json.Serialization.Metadata;
+using ByteBard.AsyncAPI.Models;
+using ByteBard.AsyncAPI.Models.Interfaces;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Saunter2.Extensions;
 using Saunter2.Schemas;
 using Saunter2.Transformers;
+using AsyncApiJsonSchema = ByteBard.AsyncAPI.Models.AsyncApiJsonSchema;
+using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace Saunter2.Services.Schemas;
 
 /// <summary>
 /// Supports managing elements that belong in the "components" section of
-/// an OpenAPI document. In particular, this is the API that is used to
-/// interact with the JSON schemas that are managed by a given OpenAPI document.
+/// an AsyncApi document. In particular, this is the API that is used to
+/// interact with the JSON schemas that are managed by a given AsyncApi document.
 /// </summary>
-internal sealed class OpenApiSchemaService(
+internal sealed class AsyncApiJsonSchemaService(
     [ServiceKey] string documentName,
     IOptions<JsonOptions> jsonOptions,
-    IOptionsMonitor<OpenApiOptions> optionsMonitor)
+    IOptionsMonitor<AsyncApiOptions> optionsMonitor)
 {
     private readonly ConcurrentDictionary<Type, string?> _schemaIdCache = new();
-    private readonly OpenApiJsonSchemaContext _jsonSchemaContext = new(new(jsonOptions.Value.SerializerOptions));
+    private readonly AsyncApiJsonSchemaContext _jsonSchemaContext = new(new(jsonOptions.Value.SerializerOptions));
     private readonly JsonSerializerOptions _jsonSerializerOptions = new(jsonOptions.Value.SerializerOptions)
     {
         // In order to properly handle the `RequiredAttribute` on type properties, add a modifier to support
@@ -56,25 +65,25 @@ internal sealed class OpenApiSchemaService(
             var type = context.TypeInfo.Type;
             // Fix up schemas generated for IFormFile, IFormFileCollection, Stream, PipeReader and FileContentResult
             // that appear as properties within complex types.
-            if (type == typeof(IFormFile) || type == typeof(Stream) || type == typeof(PipeReader) || type == typeof(Mvc.FileContentResult))
+            if (type == typeof(IFormFile) || type == typeof(Stream) || type == typeof(PipeReader) || type == typeof(FileContentResult))
             {
                 schema = new JsonObject
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string",
-                    [OpenApiSchemaKeywords.FormatKeyword] = "binary",
-                    [OpenApiConstants.SchemaId] = "IFormFile"
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string",
+                    [AsyncApiJsonSchemaKeywords.FormatKeyword] = "binary",
+                    [AsyncApiConstants.Id] = "IFormFile"
                 };
             }
             else if (type == typeof(IFormFileCollection))
             {
                 schema = new JsonObject
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "array",
-                    [OpenApiSchemaKeywords.ItemsKeyword] = new JsonObject
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "array",
+                    [AsyncApiJsonSchemaKeywords.ItemsKeyword] = new JsonObject
                     {
-                        [OpenApiSchemaKeywords.TypeKeyword] = "string",
-                        [OpenApiSchemaKeywords.FormatKeyword] = "binary",
-                        [OpenApiConstants.SchemaId] = "IFormFile"
+                        [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string",
+                        [AsyncApiJsonSchemaKeywords.FormatKeyword] = "binary",
+                        [AsyncApiConstants.Id] = "IFormFile"
                     }
                 };
             }
@@ -84,7 +93,7 @@ internal sealed class OpenApiSchemaService(
             }
             // STJ uses `true` in place of an empty object to represent a schema that matches
             // anything (like the `object` type) or types with user-defined converters. We override
-            // this default behavior here to match the format expected in OpenAPI v3.
+            // this default behavior here to match the format expected in AsyncApi v3.
             if (schema.GetValueKind() == JsonValueKind.True)
             {
                 schema = new JsonObject();
@@ -99,7 +108,7 @@ internal sealed class OpenApiSchemaService(
             }
             if (context.TypeInfo.Type.GetCustomAttributes(inherit: false).OfType<DescriptionAttribute>().LastOrDefault() is { } typeDescriptionAttribute)
             {
-                schema[OpenApiSchemaKeywords.DescriptionKeyword] = typeDescriptionAttribute.Description;
+                schema[AsyncApiJsonSchemaKeywords.DescriptionKeyword] = typeDescriptionAttribute.Description;
             }
             if (context.PropertyInfo is { AttributeProvider: { } attributeProvider })
             {
@@ -117,14 +126,14 @@ internal sealed class OpenApiSchemaService(
                 {
                     if (propertyAttributes.OfType<DescriptionAttribute>().LastOrDefault() is { } descriptionAttribute)
                     {
-                        schema[OpenApiSchemaKeywords.DescriptionKeyword] = descriptionAttribute.Description;
+                        schema[AsyncApiJsonSchemaKeywords.DescriptionKeyword] = descriptionAttribute.Description;
                     }
                 }
                 else
                 {
                     if (propertyAttributes.OfType<DescriptionAttribute>().LastOrDefault() is { } descriptionAttribute)
                     {
-                        schema[OpenApiConstants.RefDescriptionAnnotation] = descriptionAttribute.Description;
+                        schema[AsyncApiGeneratorConstants.RefDescriptionAnnotation] = descriptionAttribute.Description;
                     }
                 }
             }
@@ -137,19 +146,19 @@ internal sealed class OpenApiSchemaService(
     {
         var addReplaceTest = new JsonObject()
         {
-            [OpenApiSchemaKeywords.TypeKeyword] = "object",
-            [OpenApiSchemaKeywords.AdditionalPropertiesKeyword] = false,
-            [OpenApiSchemaKeywords.RequiredKeyword] = JsonArray(["op", "path", "value"]),
-            [OpenApiSchemaKeywords.PropertiesKeyword] = new JsonObject
+            [AsyncApiJsonSchemaKeywords.TypeKeyword] = "object",
+            [AsyncApiJsonSchemaKeywords.AdditionalPropertiesKeyword] = false,
+            [AsyncApiJsonSchemaKeywords.RequiredKeyword] = JsonArray(["op", "path", "value"]),
+            [AsyncApiJsonSchemaKeywords.PropertiesKeyword] = new JsonObject
             {
                 ["op"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string",
-                    [OpenApiSchemaKeywords.EnumKeyword] = JsonArray(["add", "replace", "test"]),
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string",
+                    [AsyncApiJsonSchemaKeywords.EnumKeyword] = JsonArray(["add", "replace", "test"]),
                 },
                 ["path"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string"
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string"
                 },
                 ["value"] = new JsonObject()
             }
@@ -157,53 +166,53 @@ internal sealed class OpenApiSchemaService(
 
         var moveCopy = new JsonObject()
         {
-            [OpenApiSchemaKeywords.TypeKeyword] = "object",
-            [OpenApiSchemaKeywords.AdditionalPropertiesKeyword] = false,
-            [OpenApiSchemaKeywords.RequiredKeyword] = JsonArray(["op", "path", "from"]),
-            [OpenApiSchemaKeywords.PropertiesKeyword] = new JsonObject
+            [AsyncApiJsonSchemaKeywords.TypeKeyword] = "object",
+            [AsyncApiJsonSchemaKeywords.AdditionalPropertiesKeyword] = false,
+            [AsyncApiJsonSchemaKeywords.RequiredKeyword] = JsonArray(["op", "path", "from"]),
+            [AsyncApiJsonSchemaKeywords.PropertiesKeyword] = new JsonObject
             {
                 ["op"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string",
-                    [OpenApiSchemaKeywords.EnumKeyword] = JsonArray(["move", "copy"]),
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string",
+                    [AsyncApiJsonSchemaKeywords.EnumKeyword] = JsonArray(["move", "copy"]),
                 },
                 ["path"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string"
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string"
                 },
                 ["from"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string"
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string"
                 },
             }
         };
 
         var remove = new JsonObject()
         {
-            [OpenApiSchemaKeywords.TypeKeyword] = "object",
-            [OpenApiSchemaKeywords.AdditionalPropertiesKeyword] = false,
-            [OpenApiSchemaKeywords.RequiredKeyword] = JsonArray(["op", "path"]),
-            [OpenApiSchemaKeywords.PropertiesKeyword] = new JsonObject
+            [AsyncApiJsonSchemaKeywords.TypeKeyword] = "object",
+            [AsyncApiJsonSchemaKeywords.AdditionalPropertiesKeyword] = false,
+            [AsyncApiJsonSchemaKeywords.RequiredKeyword] = JsonArray(["op", "path"]),
+            [AsyncApiJsonSchemaKeywords.PropertiesKeyword] = new JsonObject
             {
                 ["op"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string",
-                    [OpenApiSchemaKeywords.EnumKeyword] = JsonArray(["remove"])
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string",
+                    [AsyncApiJsonSchemaKeywords.EnumKeyword] = JsonArray(["remove"])
                 },
                 ["path"] = new JsonObject()
                 {
-                    [OpenApiSchemaKeywords.TypeKeyword] = "string"
+                    [AsyncApiJsonSchemaKeywords.TypeKeyword] = "string"
                 },
             }
         };
 
         return new JsonObject
         {
-            [OpenApiConstants.SchemaId] = "JsonPatchDocument",
-            [OpenApiSchemaKeywords.TypeKeyword] = "array",
-            [OpenApiSchemaKeywords.ItemsKeyword] = new JsonObject
+            [AsyncApiConstants.Id] = "JsonPatchDocument",
+            [AsyncApiJsonSchemaKeywords.TypeKeyword] = "array",
+            [AsyncApiJsonSchemaKeywords.ItemsKeyword] = new JsonObject
             {
-                [OpenApiSchemaKeywords.OneOfKeyword] = JsonArray([addReplaceTest, moveCopy, remove])
+                [AsyncApiJsonSchemaKeywords.OneOfKeyword] = JsonArray([addReplaceTest, moveCopy, remove])
             },
         };
 
@@ -223,7 +232,7 @@ internal sealed class OpenApiSchemaService(
         }
     }
 
-    internal async Task<OpenApiSchema> GetOrCreateUnresolvedSchemaAsync(AsyncApiDocument? document, Type type, IServiceProvider scopedServiceProvider, IOpenApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
+    internal async Task<AsyncApiJsonSchema> GetOrCreateUnresolvedSchemaAsync(AsyncApiDocument? document, Type type, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
     {
         var schemaAsJsonObject = CreateSchema(type);
         if (parameterDescription is not null)
@@ -232,14 +241,13 @@ internal sealed class OpenApiSchemaService(
         }
         // Use _jsonSchemaContext constructed from _jsonSerializerOptions to respect shared config set by end-user,
         // particularly in the case of maxDepth.
-        var deserializedSchema = JsonSerializer.Deserialize(schemaAsJsonObject, _jsonSchemaContext.OpenApiJsonSchema);
+        var deserializedSchema = JsonSerializer.Deserialize(schemaAsJsonObject, _jsonSchemaContext.AsyncApiJsonSchema);
         Debug.Assert(deserializedSchema != null, "The schema should have been deserialized successfully and materialize a non-null value.");
-        var schema = deserializedSchema.Schema;
-        await ApplySchemaTransformersAsync(document, schema, type, scopedServiceProvider, schemaTransformers, parameterDescription, cancellationToken);
-        return schema;
+        await ApplySchemaTransformersAsync(document, deserializedSchema, type, scopedServiceProvider, schemaTransformers, parameterDescription, cancellationToken);
+        return deserializedSchema;
     }
 
-    internal async Task<IOpenApiSchema> GetOrCreateSchemaAsync(AsyncApiDocument document, Type type, IServiceProvider scopedServiceProvider, IOpenApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
+    internal async Task<IAsyncApiSchema> GetOrCreateSchemaAsync(AsyncApiDocument document, Type type, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
     {
         var schema = await GetOrCreateUnresolvedSchemaAsync(document, type, scopedServiceProvider, schemaTransformers, parameterDescription, cancellationToken);
 
@@ -254,22 +262,22 @@ internal sealed class OpenApiSchemaService(
         return ResolveReferenceForSchema(document, schema, baseSchemaId);
     }
 
-    internal static IOpenApiSchema ResolveReferenceForSchema(AsyncApiDocument document, IOpenApiSchema inputSchema, string? rootSchemaId, string? baseSchemaId = null)
+    internal static AsyncApiJsonSchema ResolveReferenceForSchema(AsyncApiDocument document, IAsyncApiSchema inputSchema, string? rootSchemaId, string? baseSchemaId = null)
     {
-        var schema = UnwrapOpenApiSchema(inputSchema);
+        var schema = UnwrapAsyncApiJsonSchema(inputSchema);
 
         var isComponentizedSchema = schema.IsComponentizedSchema(out var schemaId);
 
         // When we register it, this will be the resulting reference
-        OpenApiSchemaReference? resultSchemaReference = null;
-        if (inputSchema is OpenApiSchema && isComponentizedSchema)
+        AsyncApiJsonSchemaReference? resultSchemaReference = null;
+        if (inputSchema is AsyncApiJsonSchema && isComponentizedSchema)
         {
             var targetReferenceId = baseSchemaId is not null
                 ? $"{baseSchemaId}{schemaId}"
                 : schemaId;
             if (!string.IsNullOrEmpty(targetReferenceId))
             {
-                if (!document.AddOpenApiSchemaByReference(targetReferenceId, schema, out resultSchemaReference))
+                if (!document.AddAsyncApiJsonSchemaByReference(targetReferenceId, schema, out resultSchemaReference))
                 {
                     // We already added this schema, so it has already been resolved.
                     return resultSchemaReference;
@@ -290,16 +298,16 @@ internal sealed class OpenApiSchemaService(
             foreach (var property in schema.Properties)
             {
                 var resolvedProperty = ResolveReferenceForSchema(document, property.Value, rootSchemaId);
-                if (property.Value is OpenApiSchema targetSchema &&
-                    targetSchema.Metadata?.TryGetValue(OpenApiConstants.NullableProperty, out var isNullableProperty) == true &&
-                    isNullableProperty is true)
-                {
-                    schema.Properties[property.Key] = resolvedProperty.CreateOneOfNullableWrapper();
-                }
-                else
-                {
+                // if (property.Value is AsyncApiJsonSchema targetSchema &&
+                //     targetSchema.Metadata?.TryGetValue(AsyncApiConstants.NullableProperty, out var isNullableProperty) == true &&
+                //     isNullableProperty is true)
+                // {
+                //     schema.Properties[property.Key] = resolvedProperty.CreateOneOfNullableWrapper();
+                // }
+                // else
+                // {
                     schema.Properties[property.Key] = resolvedProperty;
-                }
+                // }
             }
         }
 
@@ -342,37 +350,32 @@ internal sealed class OpenApiSchemaService(
         return schema;
     }
 
-    private static OpenApiSchema UnwrapOpenApiSchema(IOpenApiSchema sourceSchema)
+    private static AsyncApiJsonSchema UnwrapAsyncApiJsonSchema(IAsyncApiSchema sourceSchema)
     {
-        if (sourceSchema is OpenApiSchemaReference schemaReference)
+        if (sourceSchema is AsyncApiJsonSchemaReference schemaReference)
         {
-            if (schemaReference.Target is OpenApiSchema target)
-            {
-                return target;
-            }
-            else
-            {
-                throw new InvalidOperationException($"The input schema must be an {nameof(OpenApiSchema)} or {nameof(OpenApiSchemaReference)}.");
-            }
+       
+                return schemaReference;
+           
         }
-        else if (sourceSchema is OpenApiSchema directSchema)
+        else if (sourceSchema is AsyncApiJsonSchema directSchema)
         {
             return directSchema;
         }
         else
         {
-            throw new InvalidOperationException($"The input schema must be an {nameof(OpenApiSchema)} or {nameof(OpenApiSchemaReference)}.");
+            throw new InvalidOperationException($"The input schema must be an {nameof(AsyncApiJsonSchema)} or {nameof(AsyncApiJsonSchemaReference)}.");
         }
     }
 
-    internal async Task ApplySchemaTransformersAsync(AsyncApiDocument? document, IOpenApiSchema schema, Type type, IServiceProvider scopedServiceProvider, IOpenApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
+    internal async Task ApplySchemaTransformersAsync(AsyncApiDocument? document, AsyncApiJsonSchema schema, Type type, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
     {
         if (schemaTransformers.Length == 0)
         {
             return;
         }
         var jsonTypeInfo = _jsonSerializerOptions.GetTypeInfo(type);
-        var context = new OpenApiSchemaTransformerContext
+        var context = new AsyncApiJsonSchemaTransformerContext
         {
             DocumentName = documentName,
             JsonTypeInfo = jsonTypeInfo,
@@ -390,15 +393,15 @@ internal sealed class OpenApiSchemaService(
         }
     }
 
-    private async Task InnerApplySchemaTransformersAsync(IOpenApiSchema inputSchema,
+    private async Task InnerApplySchemaTransformersAsync(IAsyncApiSchema inputSchema,
         JsonTypeInfo jsonTypeInfo,
         JsonPropertyInfo? jsonPropertyInfo,
-        OpenApiSchemaTransformerContext context,
-        IOpenApiSchemaTransformer transformer,
+        AsyncApiJsonSchemaTransformerContext context,
+        IAsyncApiSchemaTransformer transformer,
         CancellationToken cancellationToken = default)
     {
         context.UpdateJsonTypeInfo(jsonTypeInfo, jsonPropertyInfo);
-        var schema = UnwrapOpenApiSchema(inputSchema);
+        var schema = UnwrapAsyncApiJsonSchema(inputSchema);
         await transformer.TransformAsync(schema, context, cancellationToken);
 
         // Only apply transformers on polymorphic schemas where we can resolve the derived
@@ -436,7 +439,7 @@ internal sealed class OpenApiSchemaService(
             }
         }
 
-        if (schema is { AdditionalPropertiesAllowed: true, AdditionalProperties: not null } &&
+        if (schema is {  AdditionalProperties: not null } &&
             jsonTypeInfo.ElementType is not null)
         {
             var elementTypeInfo = _jsonSerializerOptions.GetTypeInfo(jsonTypeInfo.ElementType);
@@ -459,10 +462,10 @@ internal sealed class OpenApiSchemaService(
     {
         if (node is JsonObject jsonObject)
         {
-            if (jsonObject.TryGetPropertyValue(OpenApiConstants.RefKeyword, out var refNode) &&
+            if (jsonObject.TryGetPropertyValue(AsyncApiConstants.DollarRef, out var refNode) &&
                 refNode is JsonValue refValue &&
                 refValue.TryGetValue<string>(out var refString) &&
-                refString.StartsWith(OpenApiConstants.RefPrefix, StringComparison.Ordinal))
+                refString.StartsWith(AsyncApiGeneratorConstants.RefPrefix, StringComparison.Ordinal))
             {
                 try
                 {
@@ -529,9 +532,9 @@ internal sealed class OpenApiSchemaService(
             throw new InvalidOperationException("Reference path cannot be null or empty.");
         }
 
-        if (!refPath.StartsWith(OpenApiConstants.RefPrefix, StringComparison.Ordinal))
+        if (!refPath.StartsWith(AsyncApiGeneratorConstants.RefPrefix, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Only fragment references (starting with '{OpenApiConstants.RefPrefix}') are supported. Found: {refPath}");
+            throw new InvalidOperationException($"Only fragment references (starting with '{AsyncApiGeneratorConstants.RefPrefix}') are supported. Found: {refPath}");
         }
 
         var path = refPath.TrimStart('#', '/');

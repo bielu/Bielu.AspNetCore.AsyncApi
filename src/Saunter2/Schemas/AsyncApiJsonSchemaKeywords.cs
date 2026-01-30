@@ -3,7 +3,7 @@
 
 namespace Saunter2.Schemas;
 
-internal class OpenApiSchemaKeywords
+internal class AsyncApiJsonSchemaKeywords
 {
     public const string TypeKeyword = "type";
     public const string FormatKeyword = "format";

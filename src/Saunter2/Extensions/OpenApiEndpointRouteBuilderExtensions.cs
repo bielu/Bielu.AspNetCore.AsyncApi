@@ -2,45 +2,53 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics.CodeAnalysis;
+using ByteBard.AsyncAPI;
+using ByteBard.AsyncAPI.Writers;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Saunter2.Buffers;
 using Saunter2.Services;
 
 namespace Saunter2.Extensions;
 
 /// <summary>
-/// OpenAPI-related methods for <see cref="IEndpointRouteBuilder"/>.
+/// AsyncApi-related methods for <see cref="IEndpointRouteBuilder"/>.
 /// </summary>
-public static class OpenApiEndpointRouteBuilderExtensions
+public static class AsyncApiEndpointRouteBuilderExtensions
 {
     /// <summary>
-    /// Register an endpoint onto the current application for resolving the OpenAPI document associated
+    /// Register an endpoint onto the current application for resolving the AsyncApi document associated
     /// with the current application.
     /// </summary>
     /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/>.</param>
     /// <param name="pattern">The route to register the endpoint on. Must include the 'documentName' route parameter.</param>
     /// <returns>An <see cref="IEndpointRouteBuilder"/> that can be used to further customize the endpoint.</returns>
-    public static IEndpointConventionBuilder MapOpenApi(this IEndpointRouteBuilder endpoints, [StringSyntax("Route")] string pattern = OpenApiConstants.DefaultOpenApiRoute)
+    public static IEndpointConventionBuilder MapAsyncApi(this IEndpointRouteBuilder endpoints, [StringSyntax("Route")] string pattern = AsyncApiConstants.DefaultAsyncApiRoute)
     {
-        var options = endpoints.ServiceProvider.GetRequiredService<IOptionsMonitor<OpenApiOptions>>();
-        return endpoints.MapGet(pattern, async (HttpContext context, string documentName = OpenApiConstants.DefaultDocumentName) =>
+        var options = endpoints.ServiceProvider.GetRequiredService<IOptionsMonitor<AsyncApiOptions>>();
+        return endpoints.MapGet(pattern, async (HttpContext context, string documentName = AsyncApiConstants.DefaultDocumentName) =>
             {
                 // We need to retrieve the document name in a case-insensitive manner to support case-insensitive document name resolution.
                 // The document service is registered with a key equal to the document name, but in lowercase.
-                // The GetRequiredKeyedService() method is case-sensitive, which doesn't work well for OpenAPI document names here,
+                // The GetRequiredKeyedService() method is case-sensitive, which doesn't work well for AsyncApi document names here,
                 // as the document name is also used as the route to retrieve the document, so we need to ensure this is lowercased to achieve consistency with ASP.NET Core routing.
                 // The same goes for the document options below, which is also case-sensitive, and thus we need to pass in a case-insensitive document name.
-                // See OpenApiServiceCollectionExtensions.cs for more info.
+                // See AsyncApiServiceCollectionExtensions.cs for more info.
                 var lowercasedDocumentName = documentName.ToLowerInvariant();
 
                 // It would be ideal to use the `HttpResponseStreamWriter` to
-                // asynchronously write to the response stream here but Microsoft.OpenApi
+                // asynchronously write to the response stream here but Microsoft.AsyncApi
                 // does not yet support async APIs on their writers.
-                // See https://github.com/microsoft/OpenAPI.NET/issues/421 for more info.
+                // See https://github.com/microsoft/AsyncApi.NET/issues/421 for more info.
                 var documentService = context.RequestServices.GetKeyedService<AsyncApiDocumentService>(lowercasedDocumentName);
                 if (documentService is null)
                 {
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     context.Response.ContentType = "text/plain;charset=utf-8";
-                    await context.Response.WriteAsync($"No OpenAPI document with the name '{lowercasedDocumentName}' was found.");
+                    await context.Response.WriteAsync($"No AsyncApi document with the name '{lowercasedDocumentName}' was found.");
                 }
                 else
                 {
@@ -51,23 +59,36 @@ public static class OpenApiEndpointRouteBuilderExtensions
                     textWriter.SetWriter(context.Response.BodyWriter);
 
                     string contentType;
-                    OpenApiWriterBase openApiWriter;
+                    AsyncApiWriterBase AsyncApiWriter;
 
                     if (UseYaml(pattern))
                     {
                         contentType = "text/plain+yaml;charset=utf-8";
-                        openApiWriter = new OpenApiYamlWriter(textWriter);
+                        AsyncApiWriter = new AsyncApiYamlWriter(textWriter,null );
                     }
                     else
                     {
                         contentType = "application/json;charset=utf-8";
-                        openApiWriter = new OpenApiJsonWriter(textWriter);
+                        AsyncApiWriter = new AsyncApiJsonWriter(textWriter);
                     }
 
                     context.Response.ContentType = contentType;
 
                     await context.Response.StartAsync();
-                    await document.SerializeAsync(openApiWriter, documentOptions.OpenApiVersion, context.RequestAborted);
+                    if (context.RequestAborted.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    switch ( documentOptions.AsyncApiVersion)
+                    {
+                        case AsyncApiVersion.AsyncApi2_0:
+                            document.SerializeV2(AsyncApiWriter);
+                            break;
+                        case AsyncApiVersion.AsyncApi3_0:
+                            document.SerializeV3(AsyncApiWriter);
+                            break;
+                    }
+               
                     await context.Response.BodyWriter.FlushAsync(context.RequestAborted);
                 }
             }).ExcludeFromDescription();

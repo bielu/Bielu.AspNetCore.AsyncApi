@@ -5,19 +5,20 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization.Metadata;
 using ByteBard.AsyncAPI;
 using ByteBard.AsyncAPI.Models;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Saunter2.Extensions;
 using Saunter2.Transformers;
 
 namespace Saunter2.Services;
 
 /// <summary>
-/// Options to support the construction of OpenAPI documents.
+/// Options to support the construction of AsyncApi documents.
 /// </summary>
-public sealed class OpenApiOptions
+public sealed class AsyncApiOptions
 {
     internal readonly List<IAsyncApiDocumentTransformer> DocumentTransformers = [];
     internal readonly List<IAsyncApiOperationTransformer> OperationTransformers = [];
-    internal readonly List<IOpenApiSchemaTransformer> SchemaTransformers = [];
+    internal readonly List<IAsyncApiSchemaTransformer> SchemaTransformers = [];
 
     /// <summary>
     /// A default implementation for creating a schema reference ID for a given <see cref="JsonTypeInfo"/>.
@@ -27,31 +28,31 @@ public sealed class OpenApiOptions
     public static string? CreateDefaultSchemaReferenceId(JsonTypeInfo jsonTypeInfo) => jsonTypeInfo.GetSchemaReferenceId();
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="OpenApiOptions"/> class
+    /// Initializes a new instance of the <see cref="AsyncApiOptions"/> class
     /// with the default <see cref="ShouldInclude"/> predicate.
     /// </summary>
-    public OpenApiOptions()
+    public AsyncApiOptions()
     {
         ShouldInclude = (description) => description.GroupName == null || string.Equals(description.GroupName, DocumentName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
-    /// The version of the OpenAPI specification to use. Defaults to <see cref="OpenApiSpecVersion.OpenApi3_1"/>.
+    /// The version of the AsyncApi specification to use. Defaults to <see cref="AsyncApiSpecVersion.AsyncApi3_1"/>.
     /// </summary>
-    public AsyncApiVersion OpenApiVersion { get; set; } = AsyncApiVersion.AsyncApi3_0;
+    public AsyncApiVersion AsyncApiVersion { get; set; } = AsyncApiVersion.AsyncApi3_0;
 
     /// <summary>
-    /// The name of the OpenAPI document this <see cref="OpenApiOptions"/> instance is associated with.
+    /// The name of the AsyncApi document this <see cref="AsyncApiOptions"/> instance is associated with.
     /// </summary>
-    public string DocumentName { get; internal set; } = OpenApiConstants.DefaultDocumentName;
+    public string DocumentName { get; internal set; } = AsyncApiGeneratorConstants.DefaultDocumentName;
 
     /// <summary>
-    /// A delegate to determine whether a given <see cref="ApiDescription"/> should be included in the given OpenAPI document.
+    /// A delegate to determine whether a given <see cref="ApiDescription"/> should be included in the given AsyncApi document.
     /// </summary>
     public Func<ApiDescription, bool> ShouldInclude { get; set; }
 
     /// <summary>
-    /// A delegate to determine how reference IDs should be created for schemas associated with types in the given OpenAPI document.
+    /// A delegate to determine how reference IDs should be created for schemas associated with types in the given AsyncApi document.
     /// </summary>
     /// <remarks>
     /// The default implementation uses the <see cref="CreateDefaultSchemaReferenceId"/> method to generate reference IDs. When
@@ -60,11 +61,11 @@ public sealed class OpenApiOptions
     public Func<JsonTypeInfo, string?> CreateSchemaReferenceId { get; set; } = CreateDefaultSchemaReferenceId;
 
     /// <summary>
-    /// Registers a new document transformer on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a new document transformer on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <typeparam name="TTransformerType">The type of the <see cref="IAsyncApiDocumentTransformer"/> to instantiate.</typeparam>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddDocumentTransformer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TTransformerType>()
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddDocumentTransformer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TTransformerType>()
         where TTransformerType : IAsyncApiDocumentTransformer
     {
         DocumentTransformers.Add(new TypeBasedAsyncApiDocumentTransformer(typeof(TTransformerType)));
@@ -72,11 +73,11 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a given instance of <see cref="IAsyncApiDocumentTransformer"/> on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a given instance of <see cref="IAsyncApiDocumentTransformer"/> on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <param name="transformer">The <see cref="IAsyncApiDocumentTransformer"/> instance to use.</param>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddDocumentTransformer(IAsyncApiDocumentTransformer transformer)
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddDocumentTransformer(IAsyncApiDocumentTransformer transformer)
     {
         ArgumentNullException.ThrowIfNull(transformer);
 
@@ -85,11 +86,11 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a given delegate as a document transformer on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a given delegate as a document transformer on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <param name="transformer">The delegate representing the document transformer.</param>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddDocumentTransformer(Func<AsyncApiDocument, AsyncApiDocumentTransformerContext, CancellationToken, Task> transformer)
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddDocumentTransformer(Func<AsyncApiDocument, AsyncApiDocumentTransformerContext, CancellationToken, Task> transformer)
     {
         ArgumentNullException.ThrowIfNull(transformer);
 
@@ -98,11 +99,11 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a new operation transformer on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a new operation transformer on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <typeparam name="TTransformerType">The type of the <see cref="IAsyncApiOperationTransformer"/> to instantiate.</typeparam>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddOperationTransformer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TTransformerType>()
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddOperationTransformer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TTransformerType>()
         where TTransformerType : IAsyncApiOperationTransformer
     {
         OperationTransformers.Add(new TypeBasedAsyncApiOperationTransformer(typeof(TTransformerType)));
@@ -110,11 +111,11 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a given instance of <see cref="IAsyncApiOperationTransformer"/> on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a given instance of <see cref="IAsyncApiOperationTransformer"/> on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <param name="transformer">The <see cref="IAsyncApiOperationTransformer"/> instance to use.</param>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddOperationTransformer(IAsyncApiOperationTransformer transformer)
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddOperationTransformer(IAsyncApiOperationTransformer transformer)
     {
         ArgumentNullException.ThrowIfNull(transformer);
 
@@ -123,11 +124,11 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a given delegate as an operation transformer on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a given delegate as an operation transformer on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <param name="transformer">The delegate representing the operation transformer.</param>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddOperationTransformer(Func<AsyncApiOperation, AsyncApiOperationTransformerContext, CancellationToken, Task> transformer)
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddOperationTransformer(Func<AsyncApiOperation, AsyncApiOperationTransformerContext, CancellationToken, Task> transformer)
     {
         ArgumentNullException.ThrowIfNull(transformer);
 
@@ -136,23 +137,23 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a new schema transformer on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a new schema transformer on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
-    /// <typeparam name="TTransformerType">The type of the <see cref="IOpenApiSchemaTransformer"/> to instantiate.</typeparam>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddSchemaTransformer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TTransformerType>()
-        where TTransformerType : IOpenApiSchemaTransformer
+    /// <typeparam name="TTransformerType">The type of the <see cref="IAsyncApiSchemaTransformer"/> to instantiate.</typeparam>
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddSchemaTransformer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TTransformerType>()
+        where TTransformerType : IAsyncApiSchemaTransformer
     {
-        SchemaTransformers.Add(new TypeBasedOpenApiSchemaTransformer(typeof(TTransformerType)));
+        SchemaTransformers.Add(new TypeBasedAsyncApiSchemaTransformer(typeof(TTransformerType)));
         return this;
     }
 
     /// <summary>
-    /// Registers a given instance of <see cref="IAsyncApiOperationTransformer"/> on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a given instance of <see cref="IAsyncApiOperationTransformer"/> on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <param name="transformer">The <see cref="IAsyncApiOperationTransformer"/> instance to use.</param>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddSchemaTransformer(IOpenApiSchemaTransformer transformer)
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddSchemaTransformer(IAsyncApiSchemaTransformer transformer)
     {
         ArgumentNullException.ThrowIfNull(transformer);
 
@@ -161,15 +162,15 @@ public sealed class OpenApiOptions
     }
 
     /// <summary>
-    /// Registers a given delegate as a schema transformer on the current <see cref="OpenApiOptions"/> instance.
+    /// Registers a given delegate as a schema transformer on the current <see cref="AsyncApiOptions"/> instance.
     /// </summary>
     /// <param name="transformer">The delegate representing the schema transformer.</param>
-    /// <returns>The <see cref="OpenApiOptions"/> instance for further customization.</returns>
-    public OpenApiOptions AddSchemaTransformer(Func<OpenApiSchema, OpenApiSchemaTransformerContext, CancellationToken, Task> transformer)
+    /// <returns>The <see cref="AsyncApiOptions"/> instance for further customization.</returns>
+    public AsyncApiOptions AddSchemaTransformer(Func<AsyncApiJsonSchema, AsyncApiJsonSchemaTransformerContext, CancellationToken, Task> transformer)
     {
         ArgumentNullException.ThrowIfNull(transformer);
 
-        SchemaTransformers.Add(new DelegateOpenApiSchemaTransformer(transformer));
+        SchemaTransformers.Add(new DelegateAsyncApiSchemaTransformer(transformer));
         return this;
     }
 }

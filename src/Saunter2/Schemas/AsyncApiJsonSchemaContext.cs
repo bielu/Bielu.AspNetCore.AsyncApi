@@ -3,10 +3,11 @@
 
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using ByteBard.AsyncAPI.Models;
 
 namespace Saunter2.Schemas;
 
-[JsonSerializable(typeof(OpenApiJsonSchema))]
+[JsonSerializable(typeof(AsyncApiJsonSchema))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(JsonNode))]
-internal sealed partial class OpenApiJsonSchemaContext : JsonSerializerContext { }
+internal sealed partial class AsyncApiJsonSchemaContext : JsonSerializerContext { }

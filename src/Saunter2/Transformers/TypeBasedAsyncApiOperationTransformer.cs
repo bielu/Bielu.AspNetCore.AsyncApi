@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using ByteBard.AsyncAPI.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Saunter2.Services;
 
 namespace Saunter2.Transformers;

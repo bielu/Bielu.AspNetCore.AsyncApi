@@ -6,12 +6,12 @@ using ByteBard.AsyncAPI.Models;
 namespace Saunter2.Transformers;
 
 /// <summary>
-/// Represents a transformer that can be used to modify an OpenAPI document.
+/// Represents a transformer that can be used to modify an AsyncApi document.
 /// </summary>
 public interface IAsyncApiDocumentTransformer
 {
     /// <summary>
-    /// Transforms the specified OpenAPI document.
+    /// Transforms the specified AsyncApi document.
     /// </summary>
     /// <param name="document">The <see cref="AsyncApiDocument"/> to modify.</param>
     /// <param name="context">The <see cref="AsyncApiDocumentTransformerContext"/> associated with the <see paramref="document"/>.</param>

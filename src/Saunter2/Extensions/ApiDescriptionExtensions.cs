@@ -4,6 +4,9 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Routing.Patterns;
 
 namespace Saunter2.Extensions;
 
@@ -17,7 +20,7 @@ internal static class ApiDescriptionExtensions
     public static HttpMethod? GetHttpMethod(this ApiDescription apiDescription) =>
         apiDescription.HttpMethod?.ToUpperInvariant() switch
         {
-            // Only add methods documented in the OpenAPI spec: https://spec.openapis.org/oas/v3.1.1.html#path-item-object
+            // Only add methods documented in the AsyncApi spec: https://spec.AsyncApis.org/oas/v3.1.1.html#path-item-object
             "GET" => HttpMethod.Get,
             "POST" => HttpMethod.Post,
             "PUT" => HttpMethod.Put,
@@ -46,7 +49,7 @@ internal static class ApiDescriptionExtensions
             return "/";
         }
         var strippedRoute = new StringBuilder();
-        var routePattern = apiDescription.RoutePattern ?? RoutePatternFactory.Parse(apiDescription.RelativePath);
+        var routePattern = RoutePatternFactory.Parse(apiDescription.RelativePath);
         for (var i = 0; i < routePattern.PathSegments.Count; i++)
         {
             strippedRoute.Append('/');

@@ -1,56 +1,60 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Saunter2.Schemas;
 using Saunter2.Services;
 using Saunter2.Services.Schemas;
-using OpenApiConstants = Saunter2.Services.OpenApiConstants;
+using AsyncApiConstants = Saunter2.Services.AsyncApiConstants;
 
 namespace Saunter2.Extensions;
 
 /// <summary>
-/// OpenAPI-related methods for <see cref="IServiceCollection"/>.
+/// AsyncApi-related methods for <see cref="IServiceCollection"/>.
 /// </summary>
-public static class OpenApiServiceCollectionExtensions
+public static class AsyncApiServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds OpenAPI services related to the given document name to the specified <see cref="IServiceCollection"/>.
+    /// Adds AsyncApi services related to the given document name to the specified <see cref="IServiceCollection"/>.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to register services onto.</param>
-    /// <param name="documentName">The name of the OpenAPI document associated with registered services.</param>
+    /// <param name="documentName">The name of the AsyncApi document associated with registered services.</param>
     /// <example>
-    /// This method is commonly used to add OpenAPI services to the <see cref="WebApplicationBuilder.Services"/>
+    /// This method is commonly used to add AsyncApi services to the <see cref="WebApplicationBuilder.Services"/>
     /// of a <see cref="WebApplicationBuilder"/>, as shown in the following example:
     /// <code>
     /// var builder = WebApplication.CreateBuilder(args);
-    /// builder.Services.AddOpenApi("MyWebApi");
+    /// builder.Services.AddAsyncApi("MyWebApi");
     /// </code>
     /// </example>
-    public static IServiceCollection AddOpenApi(this IServiceCollection services, string documentName)
+    public static IServiceCollection AddAsyncApi(this IServiceCollection services, string documentName)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddOpenApi(documentName, _ => { });
+        return services.AddAsyncApi(documentName, _ => { });
     }
 
     /// <summary>
-    /// Adds OpenAPI services related to the given document name to the specified <see cref="IServiceCollection"/> with the specified options.
+    /// Adds AsyncApi services related to the given document name to the specified <see cref="IServiceCollection"/> with the specified options.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to register services onto.</param>
-    /// <param name="documentName">The name of the OpenAPI document associated with registered services.</param>
-    /// <param name="configureOptions">A delegate used to configure the target <see cref="OpenApiOptions"/>.</param>
+    /// <param name="documentName">The name of the AsyncApi document associated with registered services.</param>
+    /// <param name="configureOptions">A delegate used to configure the target <see cref="AsyncApiOptions"/>.</param>
     /// <example>
-    /// This method is commonly used to add OpenAPI services to the <see cref="WebApplicationBuilder.Services"/>
+    /// This method is commonly used to add AsyncApi services to the <see cref="WebApplicationBuilder.Services"/>
     /// of a <see cref="WebApplicationBuilder"/>, as shown in the following example:
     /// <code>
     /// var builder = WebApplication.CreateBuilder(args);
-    /// builder.Services.AddOpenApi("MyWebApi", options => {
+    /// builder.Services.AddAsyncApi("MyWebApi", options => {
     ///     // Add a custom schema transformer for decimal types
     ///     options.AddSchemaTransformer(DecimalTransformer.TransformAsync);
     /// });
     /// </code>
     /// </example>
-    public static IServiceCollection AddOpenApi(this IServiceCollection services, string documentName, Action<OpenApiOptions> configureOptions)
+    public static IServiceCollection AddAsyncApi(this IServiceCollection services, string documentName, Action<AsyncApiOptions> configureOptions)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configureOptions);
@@ -60,8 +64,8 @@ public static class OpenApiServiceCollectionExtensions
         // To achieve parity with ASP.NET Core routing, which is case-insensitive, we need to ensure the document name is lowercased.
         var lowercasedDocumentName = documentName.ToLowerInvariant();
 
-        services.AddOpenApiCore(lowercasedDocumentName);
-        services.Configure<OpenApiOptions>(lowercasedDocumentName, options =>
+        services.AddAsyncApiCore(lowercasedDocumentName);
+        services.Configure<AsyncApiOptions>(lowercasedDocumentName, options =>
         {
             options.DocumentName = lowercasedDocumentName;
             configureOptions(options);
@@ -70,43 +74,43 @@ public static class OpenApiServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds OpenAPI services related to the default document to the specified <see cref="IServiceCollection"/> with the specified options.
+    /// Adds AsyncApi services related to the default document to the specified <see cref="IServiceCollection"/> with the specified options.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to register services onto.</param>
-    /// <param name="configureOptions">A delegate used to configure the target <see cref="OpenApiOptions"/>.</param>
+    /// <param name="configureOptions">A delegate used to configure the target <see cref="AsyncApiOptions"/>.</param>
     /// <example>
-    /// This method is commonly used to add OpenAPI services to the <see cref="WebApplicationBuilder.Services"/>
+    /// This method is commonly used to add AsyncApi services to the <see cref="WebApplicationBuilder.Services"/>
     /// of a <see cref="WebApplicationBuilder"/>, as shown in the following example:
     /// <code>
     /// var builder = WebApplication.CreateBuilder(args);
-    /// builder.Services.AddOpenApi(options => {
+    /// builder.Services.AddAsyncApi(options => {
     ///     // Add a custom schema transformer for decimal types
     ///     options.AddSchemaTransformer(DecimalTransformer.TransformAsync);
     /// });
     /// </code>
     /// </example>
-    public static IServiceCollection AddOpenApi(this IServiceCollection services, Action<OpenApiOptions> configureOptions)
-            => services.AddOpenApi(OpenApiConstants.DefaultDocumentName, configureOptions);
+    public static IServiceCollection AddAsyncApi(this IServiceCollection services, Action<AsyncApiOptions> configureOptions)
+            => services.AddAsyncApi(AsyncApiConstants.DefaultDocumentName, configureOptions);
 
     /// <summary>
-    /// Adds OpenAPI services related to the default document to the specified <see cref="IServiceCollection"/>.
+    /// Adds AsyncApi services related to the default document to the specified <see cref="IServiceCollection"/>.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to register services onto.</param>
     /// <example>
-    /// This method is commonly used to add OpenAPI services to the <see cref="WebApplicationBuilder.Services"/>
+    /// This method is commonly used to add AsyncApi services to the <see cref="WebApplicationBuilder.Services"/>
     /// of a <see cref="WebApplicationBuilder"/>, as shown in the following example:
     /// <code>
     /// var builder = WebApplication.CreateBuilder(args);
-    /// builder.Services.AddOpenApi();
+    /// builder.Services.AddAsyncApi();
     /// </code>
     /// </example>
-    public static IServiceCollection AddOpenApi(this IServiceCollection services)
-        => services.AddOpenApi(OpenApiConstants.DefaultDocumentName);
+    public static IServiceCollection AddAsyncApi(this IServiceCollection services)
+        => services.AddAsyncApi(AsyncApiConstants.DefaultDocumentName);
 
-    private static IServiceCollection AddOpenApiCore(this IServiceCollection services, string documentName)
+    private static IServiceCollection AddAsyncApiCore(this IServiceCollection services, string documentName)
     {
         services.AddEndpointsApiExplorer();
-        services.AddKeyedSingleton<OpenApiSchemaService>(documentName);
+        services.AddKeyedSingleton<AsyncApiJsonSchemaService>(documentName);
         services.AddKeyedSingleton<AsyncApiDocumentService>(documentName);
         services.AddKeyedSingleton<IAsyncApiDocumentProvider, AsyncApiDocumentService>(documentName);
 
@@ -115,7 +119,7 @@ public static class OpenApiServiceCollectionExtensions
         // Required to resolve document names for build-time generation
         services.AddSingleton(new NamedService<AsyncApiDocumentService>(documentName));
         // Required to support JSON serializations
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<JsonOptions>, OpenApiSchemaJsonOptions>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IConfigureOptions<JsonOptions>, AsyncApiJsonSchemaJsonOptions>());
         return services;
     }
 }

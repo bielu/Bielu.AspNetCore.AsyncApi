@@ -6,7 +6,7 @@ using ByteBard.AsyncAPI;
 namespace Saunter2.Services;
 
 /// <summary>
-/// Represents a provider for OpenAPI documents to support build-time generation.
+/// Represents a provider for AsyncApi documents to support build-time generation.
 /// </summary>
 /// <remarks>
 /// The Microsoft.Extensions.ApiDescription.Server package and associated configuration
@@ -22,5 +22,5 @@ internal interface IDocumentProvider
 {
     IEnumerable<string> GetDocumentNames();
     Task GenerateAsync(string documentName, TextWriter writer);
-    Task GenerateAsync(string documentName, TextWriter writer, AsyncApiVersion  openApiSpecVersion);
+    Task GenerateAsync(string documentName, TextWriter writer, AsyncApiVersion  AsyncApiSpecVersion);
 }

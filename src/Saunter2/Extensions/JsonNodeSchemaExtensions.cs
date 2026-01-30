@@ -5,12 +5,22 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
 using System.Text.Json.Serialization.Metadata;
+using ByteBard.AsyncAPI.Models;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Constraints;
 using Saunter2.Schemas;
 using Saunter2.Services;
+using AsyncApiConstants = ByteBard.AsyncAPI.Models.AsyncApiConstants;
+using AsyncApiJsonSchema = ByteBard.AsyncAPI.Models.AsyncApiJsonSchema;
 
 namespace Saunter2.Extensions;
 
@@ -20,38 +30,38 @@ namespace Saunter2.Extensions;
 /// </summary>
 internal static class JsonNodeSchemaExtensions
 {
-    private static readonly Dictionary<Type, OpenApiSchema> _simpleTypeToOpenApiSchema = new()
+    private static readonly Dictionary<Type, AsyncApiJsonSchema> _simpleTypeToAsyncApiJsonSchema = new()
     {
-        [typeof(bool)] = new() { Type = JsonSchemaType.Boolean },
-        [typeof(byte)] = new() { Type = JsonSchemaType.Integer, Format = "uint8" },
-        [typeof(byte[])] = new() { Type = JsonSchemaType.String, Format = "byte" },
-        [typeof(int)] = new() { Type = JsonSchemaType.Integer, Format = "int32" },
-        [typeof(uint)] = new() { Type = JsonSchemaType.Integer, Format = "uint32" },
-        [typeof(long)] = new() { Type = JsonSchemaType.Integer, Format = "int64" },
-        [typeof(ulong)] = new() { Type = JsonSchemaType.Integer, Format = "uint64" },
-        [typeof(short)] = new() { Type = JsonSchemaType.Integer, Format = "int16" },
-        [typeof(ushort)] = new() { Type = JsonSchemaType.Integer, Format = "uint16" },
-        [typeof(float)] = new() { Type = JsonSchemaType.Number, Format = "float" },
-        [typeof(double)] = new() { Type = JsonSchemaType.Number, Format = "double" },
-        [typeof(decimal)] = new() { Type = JsonSchemaType.Number, Format = "double" },
-        [typeof(DateTime)] = new() { Type = JsonSchemaType.String, Format = "date-time" },
-        [typeof(DateTimeOffset)] = new() { Type = JsonSchemaType.String, Format = "date-time" },
-        [typeof(Guid)] = new() { Type = JsonSchemaType.String, Format = "uuid" },
-        [typeof(char)] = new() { Type = JsonSchemaType.String, Format = "char" },
-        [typeof(Uri)] = new() { Type = JsonSchemaType.String, Format = "uri" },
-        [typeof(string)] = new() { Type = JsonSchemaType.String },
-        [typeof(TimeOnly)] = new() { Type = JsonSchemaType.String, Format = "time" },
-        [typeof(DateOnly)] = new() { Type = JsonSchemaType.String, Format = "date" },
+        [typeof(bool)] = new() { Type = SchemaType.Boolean },
+        [typeof(byte)] = new() { Type = SchemaType.Integer, Format = "uint8" },
+        [typeof(byte[])] = new() { Type = SchemaType.String, Format = "byte" },
+        [typeof(int)] = new() { Type = SchemaType.Integer, Format = "int32" },
+        [typeof(uint)] = new() { Type = SchemaType.Integer, Format = "uint32" },
+        [typeof(long)] = new() { Type = SchemaType.Integer, Format = "int64" },
+        [typeof(ulong)] = new() { Type = SchemaType.Integer, Format = "uint64" },
+        [typeof(short)] = new() { Type = SchemaType.Integer, Format = "int16" },
+        [typeof(ushort)] = new() { Type = SchemaType.Integer, Format = "uint16" },
+        [typeof(float)] = new() { Type = SchemaType.Number, Format = "float" },
+        [typeof(double)] = new() { Type = SchemaType.Number, Format = "double" },
+        [typeof(decimal)] = new() { Type = SchemaType.Number, Format = "double" },
+        [typeof(DateTime)] = new() { Type = SchemaType.String, Format = "date-time" },
+        [typeof(DateTimeOffset)] = new() { Type = SchemaType.String, Format = "date-time" },
+        [typeof(Guid)] = new() { Type = SchemaType.String, Format = "uuid" },
+        [typeof(char)] = new() { Type = SchemaType.String, Format = "char" },
+        [typeof(Uri)] = new() { Type = SchemaType.String, Format = "uri" },
+        [typeof(string)] = new() { Type = SchemaType.String },
+        [typeof(TimeOnly)] = new() { Type = SchemaType.String, Format = "time" },
+        [typeof(DateOnly)] = new() { Type = SchemaType.String, Format = "date" },
     };
 
     /// <summary>
     /// Maps the given validation attributes to the target schema.
     /// </summary>
     /// <remarks>
-    /// OpenApi schema v3 supports the validation vocabulary supported by JSON Schema. Because the underlying
+    /// AsyncApi schema v3 supports the validation vocabulary supported by JSON Schema. Because the underlying
     /// schema generator does not handle validation attributes to the validation vocabulary, we apply that mapping here.
     ///
-    /// Note that this method targets <see cref="JsonNode"/> and not <see cref="OpenApiSchema"/> because it is
+    /// Note that this method targets <see cref="JsonNode"/> and not <see cref="AsyncApiJsonSchema"/> because it is
     /// designed to be invoked via the `OnGenerated` callback provided by the underlying schema generator
     /// so that attributes can be mapped to the properties associated with inputs and outputs to a given request.
     ///
@@ -81,7 +91,7 @@ internal static class JsonNodeSchemaExtensions
         {
             if (attribute is Base64StringAttribute)
             {
-                schema[OpenApiSchemaKeywords.FormatKeyword] = "byte";
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = "byte";
             }
             else if (attribute is RangeAttribute rangeAttribute)
             {
@@ -116,44 +126,44 @@ internal static class JsonNodeSchemaExtensions
 
                 if (minDecimal is { } minValue)
                 {
-                    schema[rangeAttribute.MinimumIsExclusive ? OpenApiSchemaKeywords.ExclusiveMinimum : OpenApiSchemaKeywords.MinimumKeyword] = minValue;
+                    schema[rangeAttribute.MinimumIsExclusive ? AsyncApiJsonSchemaKeywords.ExclusiveMinimum : AsyncApiJsonSchemaKeywords.MinimumKeyword] = minValue;
                 }
                 if (maxDecimal is { } maxValue)
                 {
-                    schema[rangeAttribute.MaximumIsExclusive ? OpenApiSchemaKeywords.ExclusiveMaximum : OpenApiSchemaKeywords.MaximumKeyword] = maxValue;
+                    schema[rangeAttribute.MaximumIsExclusive ? AsyncApiJsonSchemaKeywords.ExclusiveMaximum : AsyncApiJsonSchemaKeywords.MaximumKeyword] = maxValue;
                 }
             }
             else if (attribute is RegularExpressionAttribute regularExpressionAttribute)
             {
-                schema[OpenApiSchemaKeywords.PatternKeyword] = regularExpressionAttribute.Pattern;
+                schema[AsyncApiJsonSchemaKeywords.PatternKeyword] = regularExpressionAttribute.Pattern;
             }
             else if (attribute is MaxLengthAttribute maxLengthAttribute)
             {
-                var isArray = MapJsonNodeToSchemaType(schema[OpenApiSchemaKeywords.TypeKeyword]) is { } schemaTypes && schemaTypes.HasFlag(JsonSchemaType.Array);
-                var key = isArray ? OpenApiSchemaKeywords.MaxItemsKeyword : OpenApiSchemaKeywords.MaxLengthKeyword;
+                var isArray = MapJsonNodeToSchemaType(schema[AsyncApiJsonSchemaKeywords.TypeKeyword]) is { } schemaTypes && schemaTypes.HasFlag(SchemaType.Array);
+                var key = isArray ? AsyncApiJsonSchemaKeywords.MaxItemsKeyword : AsyncApiJsonSchemaKeywords.MaxLengthKeyword;
                 schema[key] = maxLengthAttribute.Length;
             }
             else if (attribute is MinLengthAttribute minLengthAttribute)
             {
-                var isArray = MapJsonNodeToSchemaType(schema[OpenApiSchemaKeywords.TypeKeyword]) is { } schemaTypes && schemaTypes.HasFlag(JsonSchemaType.Array);
-                var key = isArray ? OpenApiSchemaKeywords.MinItemsKeyword : OpenApiSchemaKeywords.MinLengthKeyword;
+                var isArray = MapJsonNodeToSchemaType(schema[AsyncApiJsonSchemaKeywords.TypeKeyword]) is { } schemaTypes && schemaTypes.HasFlag(SchemaType.Array);
+                var key = isArray ? AsyncApiJsonSchemaKeywords.MinItemsKeyword : AsyncApiJsonSchemaKeywords.MinLengthKeyword;
                 schema[key] = minLengthAttribute.Length;
             }
             else if (attribute is LengthAttribute lengthAttribute)
             {
-                var isArray = MapJsonNodeToSchemaType(schema[OpenApiSchemaKeywords.TypeKeyword]) is { } schemaTypes && schemaTypes.HasFlag(JsonSchemaType.Array);
+                var isArray = MapJsonNodeToSchemaType(schema[AsyncApiJsonSchemaKeywords.TypeKeyword]) is { } schemaTypes && schemaTypes.HasFlag(SchemaType.Array);
                 var targetKeySuffix = isArray ? "Items" : "Length";
                 schema[$"min{targetKeySuffix}"] = lengthAttribute.MinimumLength;
                 schema[$"max{targetKeySuffix}"] = lengthAttribute.MaximumLength;
             }
             else if (attribute is UrlAttribute)
             {
-                schema[OpenApiSchemaKeywords.FormatKeyword] = "uri";
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = "uri";
             }
             else if (attribute is StringLengthAttribute stringLengthAttribute)
             {
-                schema[OpenApiSchemaKeywords.MinLengthKeyword] = stringLengthAttribute.MinimumLength;
-                schema[OpenApiSchemaKeywords.MaxLengthKeyword] = stringLengthAttribute.MaximumLength;
+                schema[AsyncApiJsonSchemaKeywords.MinLengthKeyword] = stringLengthAttribute.MinimumLength;
+                schema[AsyncApiJsonSchemaKeywords.MaxLengthKeyword] = stringLengthAttribute.MaximumLength;
             }
         }
     }
@@ -172,8 +182,8 @@ internal static class JsonNodeSchemaExtensions
         }
 
         var schemaAttribute = schema.WillBeComponentized()
-            ? OpenApiConstants.RefDefaultAnnotation
-            : OpenApiSchemaKeywords.DefaultKeyword;
+            ? AsyncApiConstants.DollarRef
+            : AsyncApiJsonSchemaKeywords.DefaultKeyword;
 
         if (defaultValue is null)
         {
@@ -189,13 +199,13 @@ internal static class JsonNodeSchemaExtensions
     /// Applies the primitive types and formats to the schema based on the type.
     /// </summary>
     /// <remarks>
-    /// OpenAPI v3 requires support for the format keyword in generated types. Because the
+    /// AsyncApi v3 requires support for the format keyword in generated types. Because the
     /// underlying schema generator does not support this, we need to manually apply the
     /// supported formats to the schemas associated with the generated type.
     ///
-    /// Note that this method targets <see cref="JsonNode"/> and not <see cref="OpenApiSchema"/> because
+    /// Note that this method targets <see cref="JsonNode"/> and not <see cref="AsyncApiJsonSchema"/> because
     /// it is is designed to be invoked via the `OnGenerated` callback in the underlying schema generator as
-    /// opposed to after the generated schemas have been mapped to OpenAPI schemas.
+    /// opposed to after the generated schemas have been mapped to AsyncApi schemas.
     /// </remarks>
     /// <param name="schema">The <see cref="JsonNode"/> produced by the underlying schema generator.</param>
     /// <param name="context">The <see cref="JsonSchemaExporterContext"/> associated with the <see paramref="schema"/>.</param>
@@ -204,15 +214,15 @@ internal static class JsonNodeSchemaExtensions
     {
         var type = context.TypeInfo.Type;
         var underlyingType = Nullable.GetUnderlyingType(type);
-        if (_simpleTypeToOpenApiSchema.TryGetValue(underlyingType ?? type, out var openApiSchema))
+        if (_simpleTypeToAsyncApiJsonSchema.TryGetValue(underlyingType ?? type, out var AsyncApiJsonSchema))
         {
-            if (underlyingType != null && MapJsonNodeToSchemaType(schema[OpenApiSchemaKeywords.TypeKeyword]) is { } schemaTypes &&
-                !schemaTypes.HasFlag(JsonSchemaType.Null))
+            if (underlyingType != null && MapJsonNodeToSchemaType(schema[AsyncApiJsonSchemaKeywords.TypeKeyword]) is { } schemaTypes &&
+                !schemaTypes.HasFlag(SchemaType.Null))
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = (schemaTypes | JsonSchemaType.Null).ToString();
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = (schemaTypes | SchemaType.Null).ToString();
             }
-            schema[OpenApiSchemaKeywords.FormatKeyword] = openApiSchema.Format;
-            schema[OpenApiConstants.SchemaId] = createSchemaReferenceId(context.TypeInfo);
+            schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = AsyncApiJsonSchema.Format;
+            schema[AsyncApiConstants.Id] = createSchemaReferenceId(context.TypeInfo);
         }
     }
 
@@ -229,65 +239,65 @@ internal static class JsonNodeSchemaExtensions
         {
             if (constraint is MinRouteConstraint minRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.MinimumKeyword] = minRouteConstraint.Min;
+                schema[AsyncApiJsonSchemaKeywords.MinimumKeyword] = minRouteConstraint.Min;
             }
             else if (constraint is MaxRouteConstraint maxRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.MaximumKeyword] = maxRouteConstraint.Max;
+                schema[AsyncApiJsonSchemaKeywords.MaximumKeyword] = maxRouteConstraint.Max;
             }
             else if (constraint is MinLengthRouteConstraint minLengthRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.MinLengthKeyword] = minLengthRouteConstraint.MinLength;
+                schema[AsyncApiJsonSchemaKeywords.MinLengthKeyword] = minLengthRouteConstraint.MinLength;
             }
             else if (constraint is MaxLengthRouteConstraint maxLengthRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.MaxLengthKeyword] = maxLengthRouteConstraint.MaxLength;
+                schema[AsyncApiJsonSchemaKeywords.MaxLengthKeyword] = maxLengthRouteConstraint.MaxLength;
             }
             else if (constraint is RangeRouteConstraint rangeRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.MinimumKeyword] = rangeRouteConstraint.Min;
-                schema[OpenApiSchemaKeywords.MaximumKeyword] = rangeRouteConstraint.Max;
+                schema[AsyncApiJsonSchemaKeywords.MinimumKeyword] = rangeRouteConstraint.Min;
+                schema[AsyncApiJsonSchemaKeywords.MaximumKeyword] = rangeRouteConstraint.Max;
             }
             else if (constraint is RegexRouteConstraint regexRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.String.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = null;
-                schema[OpenApiSchemaKeywords.PatternKeyword] = regexRouteConstraint.Constraint.ToString();
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.String.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = null;
+                schema[AsyncApiJsonSchemaKeywords.PatternKeyword] = regexRouteConstraint.Constraint.ToString();
             }
             else if (constraint is LengthRouteConstraint lengthRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.MinLengthKeyword] = lengthRouteConstraint.MinLength;
-                schema[OpenApiSchemaKeywords.MaxLengthKeyword] = lengthRouteConstraint.MaxLength;
+                schema[AsyncApiJsonSchemaKeywords.MinLengthKeyword] = lengthRouteConstraint.MinLength;
+                schema[AsyncApiJsonSchemaKeywords.MaxLengthKeyword] = lengthRouteConstraint.MaxLength;
             }
             else if (constraint is FloatRouteConstraint or DecimalRouteConstraint or DoubleRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.Number.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = constraint is FloatRouteConstraint ? "float" : "double";
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.Number.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = constraint is FloatRouteConstraint ? "float" : "double";
             }
             else if (constraint is LongRouteConstraint or IntRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.Integer.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = constraint is LongRouteConstraint ? "int64" : "int32";
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.Integer.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = constraint is LongRouteConstraint ? "int64" : "int32";
             }
             else if (constraint is GuidRouteConstraint or StringRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.String.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = constraint is GuidRouteConstraint ? "uuid" : null;
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.String.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = constraint is GuidRouteConstraint ? "uuid" : null;
             }
             else if (constraint is BoolRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.Boolean.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = null;
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.Boolean.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = null;
             }
             else if (constraint is AlphaRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.String.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = null;
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.String.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = null;
             }
             else if (constraint is DateTimeRouteConstraint)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = JsonSchemaType.String.ToString();
-                schema[OpenApiSchemaKeywords.FormatKeyword] = "date-time";
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = SchemaType.String.ToString();
+                schema[AsyncApiJsonSchemaKeywords.FormatKeyword] = "date-time";
             }
         }
     }
@@ -322,7 +332,7 @@ internal static class JsonNodeSchemaExtensions
             var attributes = validations.OfType<ValidationAttribute>();
             schema.ApplyValidationAttributes(attributes);
         }
-        if (parameterDescription.ModelMetadata is Mvc.ModelBinding.Metadata.DefaultModelMetadata { Attributes.PropertyAttributes.Count: > 0 } metadata &&
+        if (parameterDescription.ModelMetadata is DefaultModelMetadata { Attributes.PropertyAttributes.Count: > 0 } metadata &&
             metadata.Attributes.PropertyAttributes.OfType<DefaultValueAttribute>().LastOrDefault() is { } metadataDefaultValueAttribute)
         {
             schema.ApplyDefaultValue(metadataDefaultValueAttribute.Value, jsonTypeInfo);
@@ -353,10 +363,10 @@ internal static class JsonNodeSchemaExtensions
 
         if (parameterDescription.Source is { } bindingSource
             && SupportsNullableProperty(bindingSource)
-            && MapJsonNodeToSchemaType(schema[OpenApiSchemaKeywords.TypeKeyword]) is { } schemaTypes &&
-            schemaTypes.HasFlag(JsonSchemaType.Null))
+            && MapJsonNodeToSchemaType(schema[AsyncApiJsonSchemaKeywords.TypeKeyword]) is { } schemaTypes &&
+            schemaTypes.HasFlag(SchemaType.Null))
         {
-            schema[OpenApiSchemaKeywords.TypeKeyword] = (schemaTypes & ~JsonSchemaType.Null).ToString();
+            schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = (schemaTypes & ~SchemaType.Null).ToString();
         }
 
         // Parameters sourced from the header, query, route, and/or form cannot be nullable based on our binding
@@ -369,7 +379,7 @@ internal static class JsonNodeSchemaExtensions
     }
 
     /// <summary>
-    /// Applies the polymorphism options defined by System.Text.Json to the target schema following OpenAPI v3's
+    /// Applies the polymorphism options defined by System.Text.Json to the target schema following AsyncApi v3's
     /// conventions for the discriminator property.
     /// </summary>
     /// <param name="schema">The <see cref="JsonNode"/> produced by the underlying schema generator.</param>
@@ -382,9 +392,9 @@ internal static class JsonNodeSchemaExtensions
         if (context.TypeInfo.PolymorphismOptions is { } polymorphismOptions && context.BaseTypeInfo == null)
         {
             // System.Text.Json supports serializing to a non-abstract base class if no discriminator is provided.
-            // OpenAPI requires that all polymorphic sub-schemas have an associated discriminator. If the base type
+            // AsyncApi requires that all polymorphic sub-schemas have an associated discriminator. If the base type
             // doesn't declare itself as its own derived type via [JsonDerived], then it can't have a discriminator,
-            // which OpenAPI requires. In that case, we exit early to avoid mapping the polymorphism options
+            // which AsyncApi requires. In that case, we exit early to avoid mapping the polymorphism options
             // to the `discriminator` property and return an un-discriminated `anyOf` schema instead.
             if (IsNonAbstractTypeWithoutDerivedTypeReference(context))
             {
@@ -396,16 +406,16 @@ internal static class JsonNodeSchemaExtensions
                 if (derivedType.TypeDiscriminator is { } discriminator)
                 {
                     var jsonDerivedType = context.TypeInfo.Options.GetTypeInfo(derivedType.DerivedType);
-                    // Discriminator mappings are only supported in OpenAPI v3+ so we can safely assume that
-                    // the generated reference mappings will support the OpenAPI v3 schema reference format
-                    // that we hardcode here. We could use `OpenApiReference` to construct the reference and
+                    // Discriminator mappings are only supported in AsyncApi v3+ so we can safely assume that
+                    // the generated reference mappings will support the AsyncApi v3 schema reference format
+                    // that we hardcode here. We could use `AsyncApiReference` to construct the reference and
                     // serialize it but we use a hardcoded string here to avoid allocating a new object and
-                    // working around Microsoft.OpenApi's serialization libraries.
+                    // working around Microsoft.AsyncApi's serialization libraries.
                     mappings[$"{discriminator}"] = $"{createSchemaReferenceId(context.TypeInfo)}{createSchemaReferenceId(jsonDerivedType)}";
                 }
             }
-            schema[OpenApiSchemaKeywords.DiscriminatorKeyword] = polymorphismOptions.TypeDiscriminatorPropertyName;
-            schema[OpenApiSchemaKeywords.DiscriminatorMappingKeyword] = mappings;
+            schema[AsyncApiJsonSchemaKeywords.DiscriminatorKeyword] = polymorphismOptions.TypeDiscriminatorPropertyName;
+            schema[AsyncApiJsonSchemaKeywords.DiscriminatorMappingKeyword] = mappings;
         }
     }
 
@@ -419,13 +429,13 @@ internal static class JsonNodeSchemaExtensions
     {
         if (createSchemaReferenceId(context.TypeInfo) is { } schemaReferenceId)
         {
-            schema[OpenApiConstants.SchemaId] = schemaReferenceId;
+            schema[AsyncApiConstants.Id] = schemaReferenceId;
         }
         // If the type is a non-abstract base class that is not one of the derived types then mark it as a base schema.
         if (context.BaseTypeInfo == context.TypeInfo &&
             IsNonAbstractTypeWithoutDerivedTypeReference(context))
         {
-            schema[OpenApiConstants.SchemaId] = "Base";
+            schema[AsyncApiConstants.Id] = "Base";
         }
     }
 
@@ -446,7 +456,7 @@ internal static class JsonNodeSchemaExtensions
     /// <returns><see langword="true"/> if the schema will be componentized; otherwise, <see langword="false"/>.</returns>
     internal static bool WillBeComponentized(this JsonNode schema, [NotNullWhen(true)] out string? schemaId)
     {
-        if (schema[OpenApiConstants.SchemaId] is JsonNode schemaIdNode
+        if (schema[AsyncApiConstants.SchemaId] is JsonNode schemaIdNode
             && schemaIdNode.GetValueKind() == JsonValueKind.String)
         {
             schemaId = schemaIdNode.GetValue<string>();
@@ -482,16 +492,16 @@ internal static class JsonNodeSchemaExtensions
         // all schema (no type, no format, no constraints).
         if (propertyInfo.PropertyType != typeof(object) && (propertyInfo.IsGetNullable || propertyInfo.IsSetNullable))
         {
-            if (MapJsonNodeToSchemaType(schema[OpenApiSchemaKeywords.TypeKeyword]) is { } schemaTypes &&
-                !schemaTypes.HasFlag(JsonSchemaType.Null))
+            if (MapJsonNodeToSchemaType(schema[AsyncApiJsonSchemaKeywords.TypeKeyword]) is { } schemaTypes &&
+                !schemaTypes.HasFlag(SchemaType.Null))
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = (schemaTypes | JsonSchemaType.Null).ToString();
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = (schemaTypes | SchemaType.Null).ToString();
             }
         }
         if (schema.WillBeComponentized() &&
             propertyInfo.PropertyType != typeof(object) && propertyInfo.ShouldApplyNullablePropertySchema())
         {
-            schema[OpenApiConstants.NullableProperty] = true;
+            schema[AsyncApiConstants.NullableProperty] = true;
         }
     }
 
@@ -503,7 +513,7 @@ internal static class JsonNodeSchemaExtensions
     internal static void PruneNullTypeForComponentizedTypes(this JsonNode schema)
     {
         if (schema.WillBeComponentized() &&
-                schema[OpenApiSchemaKeywords.TypeKeyword] is JsonArray typeArray)
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] is JsonArray typeArray)
         {
             for (var i = typeArray.Count - 1; i >= 0; i--)
             {
@@ -514,18 +524,18 @@ internal static class JsonNodeSchemaExtensions
             }
             if (typeArray.Count == 1)
             {
-                schema[OpenApiSchemaKeywords.TypeKeyword] = typeArray[0]?.GetValue<string>();
+                schema[AsyncApiJsonSchemaKeywords.TypeKeyword] = typeArray[0]?.GetValue<string>();
             }
         }
     }
 
-    private static JsonSchemaType? MapJsonNodeToSchemaType(JsonNode? jsonNode)
+    private static SchemaType? MapJsonNodeToSchemaType(JsonNode? jsonNode)
     {
         if (jsonNode is not JsonArray jsonArray)
         {
-            if (Enum.TryParse<JsonSchemaType>(jsonNode?.GetValue<string>(), true, out var openApiSchemaType))
+            if (Enum.TryParse<SchemaType>(jsonNode?.GetValue<string>(), true, out var AsyncApiSchemaType))
             {
-                return openApiSchemaType;
+                return AsyncApiSchemaType;
             }
 
             return jsonNode is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var identifier)
@@ -533,7 +543,7 @@ internal static class JsonNodeSchemaExtensions
                 : null;
         }
 
-        JsonSchemaType? schemaType = null;
+        SchemaType? schemaType = null;
 
         foreach (var node in jsonArray)
         {
@@ -546,17 +556,17 @@ internal static class JsonNodeSchemaExtensions
 
         return schemaType;
 
-        static JsonSchemaType ToSchemaType(string identifier)
+        static SchemaType ToSchemaType(string identifier)
         {
             return identifier.ToLowerInvariant() switch
             {
-                "null" => JsonSchemaType.Null,
-                "boolean" => JsonSchemaType.Boolean,
-                "integer" => JsonSchemaType.Integer,
-                "number" => JsonSchemaType.Number,
-                "string" => JsonSchemaType.String,
-                "array" => JsonSchemaType.Array,
-                "object" => JsonSchemaType.Object,
+                "null" => SchemaType.Null,
+                "boolean" => SchemaType.Boolean,
+                "integer" => SchemaType.Integer,
+                "number" => SchemaType.Number,
+                "string" => SchemaType.String,
+                "array" => SchemaType.Array,
+                "object" => SchemaType.Object,
                 _ => throw new InvalidOperationException($"Unknown schema type: {identifier}"),
             };
         }

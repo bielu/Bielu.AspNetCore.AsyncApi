@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.ComponentModel;
@@ -9,22 +10,40 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.Pipelines;
+using System.Reflection;
 using ByteBard.AsyncAPI.Models;
+using ByteBard.AsyncAPI.Models.Interfaces;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
+using Saunter2.Extensions;
 using Saunter2.Services.Schemas;
 using Saunter2.Transformers;
 
 namespace Saunter2.Services;
 
 internal sealed class AsyncApiDocumentService(
-    [ServiceKey] string documentName,
+    [Microsoft.Extensions.DependencyInjection.ServiceKey] string documentName,
     IApiDescriptionGroupCollectionProvider apiDescriptionGroupCollectionProvider,
     IHostEnvironment hostEnvironment,
-    IOptionsMonitor<OpenApiOptions> optionsMonitor,
+    IOptionsMonitor<AsyncApiOptions> optionsMonitor,
     IServiceProvider serviceProvider,
     IServer? server = null) : IAsyncApiDocumentProvider
 {
-    private readonly OpenApiOptions _options = optionsMonitor.Get(documentName);
-    private readonly OpenApiSchemaService _componentService = serviceProvider.GetRequiredKeyedService<OpenApiSchemaService>(documentName);
+    private readonly AsyncApiOptions _options = optionsMonitor.Get(documentName);
+    private readonly AsyncApiJsonSchemaService _componentService = serviceProvider.GetRequiredKeyedService<AsyncApiJsonSchemaService>(documentName);
 
     /// <summary>
     /// Cache of <see cref="AsyncApiOperationTransformerContext"/> instances keyed by the
@@ -46,7 +65,7 @@ internal sealed class AsyncApiDocumentService(
         // pre-allocated to hold the same number of transformers as the associated
         // options object.
         var schemaTransformers = _options.SchemaTransformers.Count > 0
-            ? new IOpenApiSchemaTransformer[_options.SchemaTransformers.Count]
+            ? new IAsyncApiSchemaTransformer[_options.SchemaTransformers.Count]
             : [];
         var operationTransformers = _options.OperationTransformers.Count > 0 ?
             new IAsyncApiOperationTransformer[_options.OperationTransformers.Count]
@@ -54,10 +73,10 @@ internal sealed class AsyncApiDocumentService(
         InitializeTransformers(scopedServiceProvider, schemaTransformers, operationTransformers);
         var document = new AsyncApiDocument
         {
-            Info = GetOpenApiInfo(),
-            Servers = GetOpenApiServers(httpRequest)
+            Info = GetAsyncApiInfo(),
+            Servers = GetAsyncApiServers(httpRequest)
         };
-        document.Paths = await GetOpenApiPathsAsync(document, scopedServiceProvider, operationTransformers, schemaTransformers, cancellationToken);
+        document.Paths = await GetAsyncApiPathsAsync(document, scopedServiceProvider, operationTransformers, schemaTransformers, cancellationToken);
         try
         {
             await ApplyTransformersAsync(document, scopedServiceProvider, schemaTransformers, cancellationToken);
@@ -74,15 +93,15 @@ internal sealed class AsyncApiDocumentService(
         if (document.Components?.Schemas is not null)
         {
             // Sort schemas by key name for better readability and consistency
-            // This works around an API change in OpenAPI.NET
-            document.Components.Schemas = new Dictionary<string, IOpenApiSchema>(
+            // This works around an API change in AsyncApi.NET
+            document.Components.Schemas = new Dictionary<string, AsyncApiMultiFormatSchema>(
                 document.Components.Schemas.OrderBy(kvp => kvp.Key),
                 StringComparer.Ordinal);
         }
         return document;
     }
 
-    private async Task ApplyTransformersAsync(AsyncApiDocument document, IServiceProvider scopedServiceProvider, IOpenApiSchemaTransformer[] schemaTransformers, CancellationToken cancellationToken)
+    private async Task ApplyTransformersAsync(AsyncApiDocument document, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, CancellationToken cancellationToken)
     {
         var documentTransformerContext = new AsyncApiDocumentTransformerContext
         {
@@ -100,12 +119,12 @@ internal sealed class AsyncApiDocumentService(
         }
     }
 
-    internal void InitializeTransformers(IServiceProvider scopedServiceProvider, IOpenApiSchemaTransformer[] schemaTransformers, IAsyncApiOperationTransformer[] operationTransformers)
+    internal void InitializeTransformers(IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, IAsyncApiOperationTransformer[] operationTransformers)
     {
         for (var i = 0; i < _options.SchemaTransformers.Count; i++)
         {
             var schemaTransformer = _options.SchemaTransformers[i];
-            if (schemaTransformer is TypeBasedOpenApiSchemaTransformer typeBasedTransformer)
+            if (schemaTransformer is TypeBasedAsyncApiSchemaTransformer typeBasedTransformer)
             {
                 schemaTransformers[i] = typeBasedTransformer.InitializeTransformer(scopedServiceProvider);
             }
@@ -129,7 +148,7 @@ internal sealed class AsyncApiDocumentService(
         }
     }
 
-    internal static async Task FinalizeTransformers(IOpenApiSchemaTransformer[] schemaTransformers, IAsyncApiOperationTransformer[] operationTransformers)
+    internal static async Task FinalizeTransformers(IAsyncApiSchemaTransformer[] schemaTransformers, IAsyncApiOperationTransformer[] operationTransformers)
     {
         for (var i = 0; i < schemaTransformers.Length; i++)
         {
@@ -148,16 +167,16 @@ internal sealed class AsyncApiDocumentService(
     {
         foreach (var pathItem in document.Paths.Values)
         {
-            for (var i = 0; i < OpenApiConstants.HttpMethods.Length; i++)
+            for (var i = 0; i < AsyncApiConstants.HttpMethods.Length; i++)
             {
-                var httpMethod = OpenApiConstants.HttpMethods[i];
+                var httpMethod = AsyncApiConstants.HttpMethods[i];
                 if (pathItem.Operations is null || !pathItem.Operations.TryGetValue(httpMethod, out var operation))
                 {
                     continue;
                 }
 
                 if (operation.Metadata is { } annotations &&
-                    annotations.TryGetValue(OpenApiConstants.DescriptionId, out var descriptionId) &&
+                    annotations.TryGetValue(AsyncApiConstants.DescriptionId, out var descriptionId) &&
                     descriptionId is string descriptionIdString &&
                     TryGetCachedOperationTransformerContext(descriptionIdString, out var operationContext))
                 {
@@ -178,73 +197,73 @@ internal sealed class AsyncApiDocumentService(
     }
 
     // Note: Internal for testing.
-    internal OpenApiInfo GetOpenApiInfo()
+    internal AsyncApiInfo GetAsyncApiInfo()
     {
-        return new OpenApiInfo
+        return new AsyncApiInfo
         {
             Title = $"{hostEnvironment.ApplicationName} | {documentName}",
-            Version = OpenApiConstants.DefaultOpenApiVersion
+            Version = AsyncApiConstants.DefaultAsyncApiVersion
         };
     }
 
     // Resolve server URL from the request to handle reverse proxies.
     // If there is active request object, assume a development environment and use the server addresses.
-    internal List<OpenApiServer> GetOpenApiServers(HttpRequest? httpRequest = null)
+    internal List<AsyncApiServer> GetAsyncApiServers(HttpRequest? httpRequest = null)
     {
         if (httpRequest is not null)
         {
             var serverUrl = UriHelper.BuildAbsolute(httpRequest.Scheme, httpRequest.Host, httpRequest.PathBase);
-            // Remove trailing slash when pathBase is empty to align with OpenAPI specification.
+            // Remove trailing slash when pathBase is empty to align with AsyncApi specification.
             // Keep the trailing slash if pathBase explicitly contains "/" to preserve intentional path structure.
             if (serverUrl.EndsWith('/') && !httpRequest.PathBase.HasValue)
             {
                 serverUrl = serverUrl.TrimEnd('/');
             }
-            return [new OpenApiServer { Url = serverUrl }];
+            return [new AsyncApiServer { Host = serverUrl }];
         }
         else
         {
-            return GetDevelopmentOpenApiServers();
+            return GetDevelopmentAsyncApiServers();
         }
     }
-    private List<OpenApiServer> GetDevelopmentOpenApiServers()
+    private List<AsyncApiServer> GetDevelopmentAsyncApiServers()
     {
         if (hostEnvironment.IsDevelopment() &&
             server?.Features.Get<IServerAddressesFeature>()?.Addresses is { Count: > 0 } addresses)
         {
-            return [.. addresses.Select(address => new OpenApiServer { Url = address })];
+            return [.. addresses.Select(address => new AsyncApiServer { Host = address })];
         }
         return [];
     }
 
     /// <summary>
-    /// Gets the OpenApiPaths for the document based on the ApiDescriptions.
+    /// Gets the AsyncApiPaths for the document based on the ApiDescriptions.
     /// </summary>
     /// <remarks>
-    /// At this point in the construction of the OpenAPI document, we run
+    /// At this point in the construction of the AsyncApi document, we run
     /// each API description through the `ShouldInclude` delegate defined in
     /// the object to support filtering each
     /// description instance into its appropriate document.
     /// </remarks>
-    private async Task<OpenApiPaths> GetOpenApiPathsAsync(
+    private async Task<AsyncApiPaths> GetAsyncApiPathsAsync(
         AsyncApiDocument document,
         IServiceProvider scopedServiceProvider,
         IAsyncApiOperationTransformer[] operationTransformers,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
         var descriptionsByPath = apiDescriptionGroupCollectionProvider.ApiDescriptionGroups.Items
             .SelectMany(group => group.Items)
             .Where(_options.ShouldInclude)
             .GroupBy(apiDescription => apiDescription.MapRelativePathToItemPath());
-        var paths = new OpenApiPaths();
+        var paths = new AsyncApiPaths();
         foreach (var descriptions in descriptionsByPath)
         {
-            Debug.Assert(descriptions.Key != null, "Relative path mapped to OpenApiPath key cannot be null.");
+            Debug.Assert(descriptions.Key != null, "Relative path mapped to AsyncApiPath key cannot be null.");
             var operations = await GetOperationsAsync(descriptions, document, scopedServiceProvider, operationTransformers, schemaTransformers, cancellationToken);
             if (operations.Count > 0)
             {
-                paths.Add(descriptions.Key, new OpenApiPathItem { Operations = operations });
+                paths.Add(descriptions.Key, new AsyncApiPathItem { Operations = operations });
             }
         }
 
@@ -256,7 +275,7 @@ internal sealed class AsyncApiDocumentService(
         AsyncApiDocument document,
         IServiceProvider scopedServiceProvider,
         IAsyncApiOperationTransformer[] operationTransformers,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
         var operations = new Dictionary<HttpMethod, AsyncApiOperation>();
@@ -264,7 +283,7 @@ internal sealed class AsyncApiDocumentService(
         {
             var operation = await GetOperationAsync(description, document, scopedServiceProvider, schemaTransformers, cancellationToken);
             operation.Metadata ??= new Dictionary<string, object>();
-            operation.Metadata.Add(OpenApiConstants.DescriptionId, description.ActionDescriptor.Id);
+            operation.Metadata.Add(AsyncApiConstants.DescriptionId, description.ActionDescriptor.Id);
 
             var operationContext = new AsyncApiOperationTransformerContext
             {
@@ -308,19 +327,20 @@ internal sealed class AsyncApiDocumentService(
         ApiDescription description,
         AsyncApiDocument document,
         IServiceProvider scopedServiceProvider,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
         var tags = GetTags(description, document);
         var operation = new AsyncApiOperation
         {
-            OperationId = GetOperationId(description),
+            // OperationId = GetOperationId(description),
             Summary = GetSummary(description),
             Description = GetDescription(description),
-            Responses = await GetResponsesAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
-            Parameters = await GetParametersAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
-            RequestBody = await GetRequestBodyAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
-            Tags = tags,
+            // Channel = GetChannel(description),
+            // Responses = await GetResponsesAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
+            // Parameters = await GetParametersAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
+            // RequestBody = await GetRequestBodyAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
+            Tags = tags.ToList(),
         };
         return operation;
     }
@@ -335,17 +355,17 @@ internal sealed class AsyncApiDocumentService(
         => description.ActionDescriptor.AttributeRouteInfo?.Name ??
             description.ActionDescriptor.EndpointMetadata.OfType<IEndpointNameMetadata>().LastOrDefault()?.EndpointName;
 
-    private static HashSet<OpenApiTagReference> GetTags(ApiDescription description, AsyncApiDocument document)
+    private static HashSet<AsyncApiTag> GetTags(ApiDescription description, AsyncApiDocument document)
     {
         var actionDescriptor = description.ActionDescriptor;
         if (actionDescriptor.EndpointMetadata?.OfType<ITagsMetadata>().LastOrDefault() is { } tagsMetadata)
         {
-            HashSet<OpenApiTagReference> tags = [];
+            HashSet<AsyncApiTagReference> tags = [];
             foreach (var tag in tagsMetadata.Tags)
             {
-                document.Tags ??= new HashSet<OpenApiTag>();
-                document.Tags.Add(new OpenApiTag { Name = tag });
-                tags.Add(new OpenApiTagReference(tag, document));
+                document.Tags ??= new HashSet<AsyncApiTag>();
+                document.Tags.Add(new AsyncApiTag { Name = tag });
+                tags.Add(new AsyncApiTagReference(tag, document));
 
             }
             return tags;
@@ -353,57 +373,57 @@ internal sealed class AsyncApiDocumentService(
         // If no tags are specified, use the controller name as the tag. This effectively
         // allows us to group endpoints by the "resource" concept (e.g. users, todos, etc.)
         var controllerName = description.ActionDescriptor.RouteValues["controller"];
-        document.Tags ??= new HashSet<OpenApiTag>();
-        document.Tags.Add(new OpenApiTag { Name = controllerName });
+        document.Tags ??= new HashSet<AsyncApiTag>();
+        document.Tags.Add(new AsyncApiTag { Name = controllerName });
         return controllerName is not null ? [new(controllerName, document)] : [];
     }
 
-    private async Task<OpenApiResponses> GetResponsesAsync(
+    private async Task<AsyncApiResponses> GetResponsesAsync(
         AsyncApiDocument document,
         ApiDescription description,
         IServiceProvider scopedServiceProvider,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
-        // OpenAPI requires that each operation have a response, usually a successful one.
+        // AsyncApi requires that each operation have a response, usually a successful one.
         // if there are no response types defined, we assume a successful 200 OK response
         // with no content by default.
         if (description.SupportedResponseTypes.Count == 0)
         {
-            return new OpenApiResponses
+            return new AsyncApiResponses
             {
                 ["200"] = await GetResponseAsync(document, description, StatusCodes.Status200OK, _defaultApiResponseType, scopedServiceProvider, schemaTransformers, cancellationToken)
             };
         }
 
-        var responses = new OpenApiResponses();
+        var responses = new AsyncApiResponses();
         foreach (var responseType in description.SupportedResponseTypes)
         {
-            // The "default" response type is a special case in OpenAPI used to describe
+            // The "default" response type is a special case in AsyncApi used to describe
             // the response for all HTTP status codes that are not explicitly defined
             // for a given operation. This is typically used to describe catch-all scenarios
             // like error responses.
             var responseKey = responseType.IsDefaultResponse
-                ? OpenApiConstants.DefaultOpenApiResponseKey
+                ? AsyncApiConstants.DefaultAsyncApiResponseKey
                 : responseType.StatusCode.ToString(CultureInfo.InvariantCulture);
             responses.Add(responseKey, await GetResponseAsync(document, description, responseType.StatusCode, responseType, scopedServiceProvider, schemaTransformers, cancellationToken));
         }
         return responses;
     }
 
-    private async Task<OpenApiResponse> GetResponseAsync(
+    private async Task<AsyncApiResponse> GetResponseAsync(
         AsyncApiDocument document,
         ApiDescription apiDescription,
         int statusCode,
         ApiResponseType apiResponseType,
         IServiceProvider scopedServiceProvider,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
-        var response = new OpenApiResponse
+        var response = new AsyncApiResponse
         {
             Description = apiResponseType.Description ?? ReasonPhrases.GetReasonPhrase(statusCode),
-            Content = new Dictionary<string, OpenApiMediaType>()
+            Content = new Dictionary<string, AsyncApiMediaType>()
         };
 
         // ApiResponseFormats aggregates information about the supported response content types
@@ -414,7 +434,7 @@ internal sealed class AsyncApiDocumentService(
             .Select(responseFormat => responseFormat.MediaType);
         foreach (var contentType in apiResponseFormatContentTypes)
         {
-            IOpenApiSchema? schema = null;
+            IAsyncApiSchema? schema = null;
             if (apiResponseType.Type is { } responseType)
             {
                 schema = await _componentService.GetOrCreateSchemaAsync(document, responseType, scopedServiceProvider, schemaTransformers, null, cancellationToken);
@@ -422,7 +442,7 @@ internal sealed class AsyncApiDocumentService(
                     ? schema.CreateOneOfNullableWrapper()
                     : schema;
             }
-            response.Content[contentType] = new OpenApiMediaType { Schema = schema ?? new OpenApiSchema() };
+            response.Content[contentType] = new AsyncApiMediaType { Schema = schema ?? new AsyncApiJsonSchema() };
         }
 
         // MVC's `ProducesAttribute` doesn't implement the produces metadata that the ApiExplorer
@@ -433,20 +453,20 @@ internal sealed class AsyncApiDocumentService(
             .SelectMany(attr => attr.ContentTypes);
         foreach (var contentType in explicitContentTypes)
         {
-            response.Content.TryAdd(contentType, new OpenApiMediaType());
+            response.Content.TryAdd(contentType, new AsyncApiMediaType());
         }
 
         return response;
     }
 
-    private async Task<List<IOpenApiParameter>?> GetParametersAsync(
+    private async Task<List<AsyncApiParameter>?> GetParametersAsync(
         AsyncApiDocument document,
         ApiDescription description,
         IServiceProvider scopedServiceProvider,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
-        List<IOpenApiParameter>? parameters = null;
+        List<AsyncApiParameter>? parameters = null;
         foreach (var parameter in description.ParameterDescriptions)
         {
             if (ShouldIgnoreParameter(parameter))
@@ -454,7 +474,7 @@ internal sealed class AsyncApiDocumentService(
                 continue;
             }
 
-            var openApiParameter = new OpenApiParameter
+            var AsyncApiParameter = new AsyncApiParameter
             {
                 Name = parameter.Name,
                 In = parameter.Source.Id switch
@@ -470,7 +490,7 @@ internal sealed class AsyncApiDocumentService(
             };
 
             parameters ??= [];
-            parameters.Add(openApiParameter);
+            parameters.Add(AsyncApiParameter);
         }
 
         return parameters;
@@ -485,7 +505,7 @@ internal sealed class AsyncApiDocumentService(
             }
             else if (parameter.Source == BindingSource.Header && _disallowedHeaderParameters.Contains(parameter.Name))
             {
-                // OpenAPI 3.0 states certain headers are "not allowed" to be defined as parameters.
+                // AsyncApi 3.0 states certain headers are "not allowed" to be defined as parameters.
                 // See https://github.com/dotnet/aspnetcore/issues/57305 for more context.
                 return true;
             }
@@ -498,12 +518,12 @@ internal sealed class AsyncApiDocumentService(
     {
         var hasRequiredAttribute = parameter.ParameterDescriptor is IParameterInfoParameterDescriptor parameterInfoDescriptor &&
             parameterInfoDescriptor.ParameterInfo.GetCustomAttributes(inherit: true).Any(attr => attr is RequiredAttribute);
-        // Per the OpenAPI specification, parameters that are sourced from the path
+        // Per the AsyncApi specification, parameters that are sourced from the path
         // are always required, regardless of the requiredness status of the parameter.
         return parameter.Source == BindingSource.Path || parameter.IsRequired || hasRequiredAttribute;
     }
 
-    // Apply [Description] attributes on the parameter to the top-level OpenApiParameter object and not the schema.
+    // Apply [Description] attributes on the parameter to the top-level AsyncApiParameter object and not the schema.
     private static string? GetParameterDescriptionFromAttribute(ApiParameterDescription parameter)
     {
         if (parameter.ParameterDescriptor is IParameterInfoParameterDescriptor { ParameterInfo: { } parameterInfo } &&
@@ -521,7 +541,7 @@ internal sealed class AsyncApiDocumentService(
         return null;
     }
 
-    private async Task<OpenApiRequestBody?> GetRequestBodyAsync(AsyncApiDocument document, ApiDescription description, IServiceProvider scopedServiceProvider, IOpenApiSchemaTransformer[] schemaTransformers, CancellationToken cancellationToken)
+    private async Task<AsyncApiRequestBody?> GetRequestBodyAsync(AsyncApiDocument document, ApiDescription description, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, CancellationToken cancellationToken)
     {
         // Only one parameter can be bound from the body in each request.
         if (description.TryGetBodyParameter(out var bodyParameter))
@@ -539,13 +559,13 @@ internal sealed class AsyncApiDocumentService(
         return null;
     }
 
-    private async Task<OpenApiRequestBody> GetFormRequestBody(
+    private async Task<AsyncApiRequestBody> GetFormRequestBody(
         AsyncApiDocument document,
         IList<ApiRequestFormat> supportedRequestFormats,
         IEnumerable<ApiParameterDescription> formParameters,
         IList<object> endpointMetadata,
         IServiceProvider scopedServiceProvider,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
         if (supportedRequestFormats.Count == 0)
@@ -555,17 +575,17 @@ internal sealed class AsyncApiDocumentService(
             supportedRequestFormats = [new ApiRequestFormat { MediaType = "application/x-www-form-urlencoded" }];
         }
 
-        var requestBody = new OpenApiRequestBody
+        var requestBody = new AsyncApiRequestBody
         {
             // Form bodies are always required because the framework doesn't support
             // serializing a form collection from an empty body. Instead, requiredness
             // must be set on a per-parameter basis. See below.
             Required = true,
-            Content = new Dictionary<string, OpenApiMediaType>()
+            Content = new Dictionary<string, AsyncApiMediaType>()
         };
 
-        var schema = new OpenApiSchema { Type = JsonSchemaType.Object, Properties = new Dictionary<string, IOpenApiSchema>() };
-        IOpenApiSchema? complexTypeSchema = null;
+        var schema = new AsyncApiJsonSchema { Type = JsonSchemaType.Object, Properties = new Dictionary<string, IAsyncApiSchema>() };
+        IAsyncApiSchema? complexTypeSchema = null;
         // Group form parameters by their name because MVC explodes form parameters that are bound from the
         // same model instance into separate ApiParameterDescriptions in ApiExplorer, while minimal APIs does not.
         //
@@ -598,10 +618,10 @@ internal sealed class AsyncApiDocumentService(
                     if (hasMultipleFormParameters)
                     {
                         schema.AllOf ??= [];
-                        schema.AllOf.Add(new OpenApiSchema
+                        schema.AllOf.Add(new AsyncApiJsonSchema
                         {
                             Type = JsonSchemaType.Object,
-                            Properties = new Dictionary<string, IOpenApiSchema>
+                            Properties = new Dictionary<string, IAsyncApiSchema>
                             {
                                 [description.Name] = parameterSchema
                             }
@@ -609,7 +629,7 @@ internal sealed class AsyncApiDocumentService(
                     }
                     else
                     {
-                        schema.Properties ??= new Dictionary<string, IOpenApiSchema>();
+                        schema.Properties ??= new Dictionary<string, IAsyncApiSchema>();
                         schema.Properties[description.Name] = parameterSchema;
                     }
                 }
@@ -638,10 +658,10 @@ internal sealed class AsyncApiDocumentService(
                                 schema.Required.Add(description.Name);
                             }
                             schema.AllOf ??= [];
-                            schema.AllOf.Add(new OpenApiSchema
+                            schema.AllOf.Add(new AsyncApiJsonSchema
                             {
                                 Type = JsonSchemaType.Object,
-                                Properties = new Dictionary<string, IOpenApiSchema>
+                                Properties = new Dictionary<string, IAsyncApiSchema>
                                 {
                                     [description.Name] = parameterSchema
                                 }
@@ -661,7 +681,7 @@ internal sealed class AsyncApiDocumentService(
                                 schema.Required ??= new HashSet<string>();
                                 schema.Required.Add(description.Name);
                             }
-                            schema.Properties ??= new Dictionary<string, IOpenApiSchema>();
+                            schema.Properties ??= new Dictionary<string, IAsyncApiSchema>();
                             schema.Properties[description.Name] = parameterSchema;
                         }
                     }
@@ -671,7 +691,7 @@ internal sealed class AsyncApiDocumentService(
             {
                 if (hasMultipleFormParameters)
                 {
-                    var propertySchema = new OpenApiSchema { Type = JsonSchemaType.Object, Properties = new Dictionary<string, IOpenApiSchema>() };
+                    var propertySchema = new AsyncApiJsonSchema { Type = JsonSchemaType.Object, Properties = new Dictionary<string, IAsyncApiSchema>() };
                     foreach (var description in parameter)
                     {
                         propertySchema.Properties[description.Name] = await _componentService.GetOrCreateSchemaAsync(document, description.Type, scopedServiceProvider, schemaTransformers, description, cancellationToken: cancellationToken);
@@ -683,7 +703,7 @@ internal sealed class AsyncApiDocumentService(
                 {
                     foreach (var description in parameter)
                     {
-                        schema.Properties ??= new Dictionary<string, IOpenApiSchema>();
+                        schema.Properties ??= new Dictionary<string, IAsyncApiSchema>();
                         schema.Properties[description.Name] = await _componentService.GetOrCreateSchemaAsync(document, description.Type, scopedServiceProvider, schemaTransformers, description, cancellationToken: cancellationToken);
                     }
                 }
@@ -693,7 +713,7 @@ internal sealed class AsyncApiDocumentService(
         foreach (var requestFormat in supportedRequestFormats)
         {
             var contentType = requestFormat.MediaType;
-            requestBody.Content[contentType] = new OpenApiMediaType
+            requestBody.Content[contentType] = new AsyncApiMediaType
             {
                 Schema = complexTypeSchema ?? schema
             };
@@ -702,12 +722,12 @@ internal sealed class AsyncApiDocumentService(
         return requestBody;
     }
 
-    private async Task<OpenApiRequestBody> GetJsonRequestBody(
+    private async Task<AsyncApiRequestBody> GetJsonRequestBody(
         AsyncApiDocument document,
         IList<ApiRequestFormat> supportedRequestFormats,
         ApiParameterDescription bodyParameter,
         IServiceProvider scopedServiceProvider,
-        IOpenApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
         CancellationToken cancellationToken)
     {
         if (supportedRequestFormats.Count == 0)
@@ -732,10 +752,10 @@ internal sealed class AsyncApiDocumentService(
             }
         }
 
-        var requestBody = new OpenApiRequestBody
+        var requestBody = new AsyncApiRequestBody
         {
             Required = IsRequired(bodyParameter),
-            Content = new Dictionary<string, OpenApiMediaType>(),
+            Content = new Dictionary<string, AsyncApiMediaType>(),
             Description = GetParameterDescriptionFromAttribute(bodyParameter)
         };
 
@@ -746,7 +766,7 @@ internal sealed class AsyncApiDocumentService(
             schema = bodyParameter.ShouldApplyNullableRequestSchema()
                 ? schema.CreateOneOfNullableWrapper()
                 : schema;
-            requestBody.Content[contentType] = new OpenApiMediaType { Schema = schema };
+            requestBody.Content[contentType] = new AsyncApiMediaType { Schema = schema };
         }
 
         return requestBody;
@@ -778,7 +798,7 @@ internal sealed class AsyncApiDocumentService(
         var requiresModelMetadataFallbackForEnum = parameterType == typeof(string)
             && parameter.ModelMetadata.ModelType != parameter.Type
             && parameter.ModelMetadata.ModelType.IsEnum;
-        // Enums are exempt because we want to set the IOpenApiSchema.Enum field when feasible.
+        // Enums are exempt because we want to set the IAsyncApiSchema.Enum field when feasible.
         // parameter.Type = typeof(TEnum), typeof(TypeWithTryParse)
         // parameter.ModelMetadata.Type = typeof(string)
         var hasTryParse = bindingMetadata?.HasTryParse == true && parameterType is not null && !parameterType.IsEnum;

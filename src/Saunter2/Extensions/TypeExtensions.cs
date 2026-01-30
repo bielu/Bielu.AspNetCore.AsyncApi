@@ -3,6 +3,10 @@
 
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 
 namespace Saunter2.Extensions;
 
@@ -11,12 +15,23 @@ internal static class TypeExtensions
     private const string JsonPatchDocumentNamespace = "Microsoft.AspNetCore.JsonPatch.SystemTextJson";
     private const string JsonPatchDocumentName = "JsonPatchDocument";
     private const string JsonPatchDocumentNameOfT = "JsonPatchDocument`1";
-
+    public static bool HasTryParseMethod(this Type targetType)
+    {
+        var method = targetType.GetMethod(
+            "TryParse",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            new[] { typeof(string), targetType.MakeByRefType() },
+            null
+        );
+        return method?.ReturnType == typeof(bool);
+    }
+ 
     public static bool IsJsonPatchDocument(this Type type)
     {
         // We cannot depend on the actual runtime type as
         // Microsoft.AspNetCore.JsonPatch.SystemTextJson is not
-        // AoT compatible so cannot be referenced by Microsoft.AspNetCore.OpenApi.
+        // AoT compatible so cannot be referenced by Microsoft.AspNetCore.AsyncApi.
         var modelType = type;
 
         while (modelType != null && modelType != typeof(object))

@@ -3,17 +3,19 @@
 
 using ByteBard.AsyncAPI.Models;
 using ByteBard.AsyncAPI.Models.Interfaces;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.Extensions.DependencyInjection;
 using Saunter2.Services.Schemas;
 
 namespace Saunter2.Transformers;
 
 /// <summary>
-/// Represents the context in which an OpenAPI operation transformer is executed.
+/// Represents the context in which an AsyncApi operation transformer is executed.
 /// </summary>
 public sealed class AsyncApiOperationTransformerContext
 {
     /// <summary>
-    /// Gets the name of the associated OpenAPI document.
+    /// Gets the name of the associated AsyncApi document.
     /// </summary>
     public required string DocumentName { get; init; }
 
@@ -28,26 +30,26 @@ public sealed class AsyncApiOperationTransformerContext
     public required IServiceProvider ApplicationServices { get; init; }
 
     /// <summary>
-    /// Gets the OpenAPI document the current endpoint belongs to.
+    /// Gets the AsyncApi document the current endpoint belongs to.
     /// </summary>
     public AsyncApiDocument? Document { get; init; }
 
-    internal IOpenApiSchemaTransformer[] SchemaTransformers { get; init; } = [];
+    internal IAsyncApiSchemaTransformer[] SchemaTransformers { get; init; } = [];
 
     /// <summary>
-    /// Gets or creates an <see cref="OpenApiSchema"/> for the specified type. Augments
-    /// the schema with any <see cref="IOpenApiSchemaTransformer"/>s that are registered
+    /// Gets or creates an <see cref="AsyncApiJsonSchema"/> for the specified type. Augments
+    /// the schema with any <see cref="IAsyncApiSchemaTransformer"/>s that are registered
     /// on the document. If <paramref name="parameterDescription"/> is not null, the schema will be
     /// augmented with the <see cref="ApiParameterDescription"/> information.
     /// </summary>
     /// <param name="type">The type for which the schema is being created.</param>
     /// <param name="parameterDescription">An optional parameter description to augment the schema.</param>
     /// <param name="cancellationToken">A cancellation token to cancel the operation.</param>
-    /// <returns>A task that represents the asynchronous operation, with a value of type <see cref="OpenApiSchema"/>.</returns>
-    public Task<IAsyncApiSchema> GetOrCreateSchemaAsync(Type type, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
+    /// <returns>A task that represents the asynchronous operation, with a value of type <see cref="AsyncApiJsonSchema"/>.</returns>
+    public async Task<IAsyncApiSchema> GetOrCreateSchemaAsync(Type type, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
     {
-        var schemaService = ApplicationServices.GetRequiredKeyedService<OpenApiSchemaService>(DocumentName);
-        return schemaService.GetOrCreateUnresolvedSchemaAsync(
+        var schemaService = ApplicationServices.GetRequiredKeyedService<AsyncApiJsonSchemaService>(DocumentName);
+        return await schemaService.GetOrCreateUnresolvedSchemaAsync(
             document: Document,
             type: type,
             parameterDescription: parameterDescription,

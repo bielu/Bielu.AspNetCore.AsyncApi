@@ -3,6 +3,8 @@
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using ByteBard.AsyncAPI.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Saunter2.Transformers;
 

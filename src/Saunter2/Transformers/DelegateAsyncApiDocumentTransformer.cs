@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using ByteBard.AsyncAPI.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Saunter2.Services;
 
 namespace Saunter2.Transformers;
 

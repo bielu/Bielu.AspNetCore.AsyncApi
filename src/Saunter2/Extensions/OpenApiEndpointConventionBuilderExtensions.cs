@@ -3,57 +3,25 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using ByteBard.AsyncAPI.Models;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Saunter2.Services;
 using Saunter2.Transformers;
 
 namespace Saunter2.Extensions;
 
 /// <summary>
-/// Extension methods for annotating OpenAPI descriptions on an <see cref="Endpoint" />.
+/// Extension methods for annotating AsyncApi descriptions on an <see cref="Endpoint" />.
 /// </summary>
-public static class OpenApiEndpointConventionBuilderExtensions
+public static class AsyncApiEndpointConventionBuilderExtensions
 {
-    private const string TrimWarningMessage = "Calls Microsoft.AspNetCore.OpenApi.OpenApiGenerator.GetAsyncApiOperation(MethodInfo, EndpointMetadataCollection, RoutePattern) which uses dynamic analysis. Use IServiceCollection.AddOpenApi() to generate OpenAPI metadata at startup for all endpoints,";
+    private const string TrimWarningMessage = "Calls Saunter2.Services.AsyncApiGenerator.GetAsyncApiOperation(MethodInfo, EndpointMetadataCollection, RoutePattern) which uses dynamic analysis. Use IServiceCollection.AddAsyncApi() to generate AsyncApi metadata at startup for all endpoints,";
 
-    /// <summary>
-    /// Adds an OpenAPI annotation to <see cref="Endpoint.Metadata" /> associated
-    /// with the current endpoint.
-    /// </summary>
-    /// <remarks>
-    /// This method does not integrate with built-in OpenAPI document generation support in ASP.NET Core
-    /// and is primarily intended for consumption along-side Swashbuckle.AspNetCore.
-    /// </remarks>
-    /// <param name="builder">The <see cref="IEndpointConventionBuilder"/>.</param>
-    /// <returns>A <see cref="IEndpointConventionBuilder"/> that can be used to further customize the endpoint.</returns>
-    [Obsolete("WithOpenApi is deprecated and will be removed in a future release. For more information, visit https://aka.ms/aspnet/deprecate/002.", DiagnosticId = "ASPDEPR002", UrlFormat = Obsoletions.AspNetCoreDeprecate002Url)]
-    [RequiresDynamicCode(TrimWarningMessage)]
-    [RequiresUnreferencedCode(TrimWarningMessage)]
-    public static TBuilder WithOpenApi<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder
-    {
-        builder.Finally(builder => AddAndConfigureOperationForEndpoint(builder));
-        return builder;
-    }
-
-    /// <summary>
-    /// Adds an OpenAPI annotation to <see cref="Endpoint.Metadata" /> associated
-    /// with the current endpoint and modifies it with the given <paramref name="configureOperation"/>.
-    /// </summary>
-    /// <remarks>
-    /// This method does not integrate with built-in OpenAPI document generation support in ASP.NET Core
-    /// and is primarily intended for consumption along-side Swashbuckle.AspNetCore.
-    /// </remarks>
-    /// <param name="builder">The <see cref="IEndpointConventionBuilder"/>.</param>
-    /// <param name="configureOperation">An <see cref="Func{T, TResult}"/> that returns a new OpenAPI annotation given a generated operation.</param>
-    /// <returns>A <see cref="IEndpointConventionBuilder"/> that can be used to further customize the endpoint.</returns>
-    [Obsolete("WithOpenApi is deprecated and will be removed in a future release. For more information, visit https://aka.ms/aspnet/deprecate/002.", DiagnosticId = "ASPDEPR002", UrlFormat = Obsoletions.AspNetCoreDeprecate002Url)]
-    [RequiresDynamicCode(TrimWarningMessage)]
-    [RequiresUnreferencedCode(TrimWarningMessage)]
-    public static TBuilder WithOpenApi<TBuilder>(this TBuilder builder, Func<AsyncApiOperation, AsyncApiOperation> configureOperation)
-        where TBuilder : IEndpointConventionBuilder
-    {
-        builder.Finally(endpointBuilder => AddAndConfigureOperationForEndpoint(endpointBuilder, configureOperation));
-        return builder;
-    }
+    
 
     [RequiresDynamicCode(TrimWarningMessage)]
     [RequiresUnreferencedCode(TrimWarningMessage)]
@@ -102,7 +70,7 @@ public static class OpenApiEndpointConventionBuilderExtensions
         var applicationServices = routeEndpointBuilder.ApplicationServices;
         var hostEnvironment = applicationServices.GetService<IHostEnvironment>();
         var serviceProviderIsService = applicationServices.GetService<IServiceProviderIsService>();
-        var generator = new OpenApiGenerator(hostEnvironment, serviceProviderIsService);
+        var generator = new AsyncApiGenerator(hostEnvironment, serviceProviderIsService);
         var newOperation = generator.GetAsyncApiOperation(methodInfo, metadata, pattern);
 
         if (newOperation is not null)
@@ -120,7 +88,7 @@ public static class OpenApiEndpointConventionBuilderExtensions
     }
 
     /// <summary>
-    /// Adds an OpenAPI operation transformer to the <see cref="EndpointBuilder.Metadata" /> associated
+    /// Adds an AsyncApi operation transformer to the <see cref="EndpointBuilder.Metadata" /> associated
     /// with the current endpoint.
     /// </summary>
     /// <param name="builder">The <see cref="IEndpointConventionBuilder"/>.</param>

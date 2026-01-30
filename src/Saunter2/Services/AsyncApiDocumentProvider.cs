@@ -1,52 +1,67 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using ByteBard.AsyncAPI;
+using ByteBard.AsyncAPI.Writers;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+
 namespace Saunter2.Services;
 
 /// <summary>
-/// Provides an implementation of <see cref="IDocumentProvider"/> to use for build-time generation of OpenAPI documents.
+/// Provides an implementation of <see cref="IDocumentProvider"/> to use for build-time generation of AsyncApi documents.
 /// </summary>
 /// <param name="serviceProvider">The <see cref="IServiceProvider"/> to use.</param>
 internal sealed class AsyncApiDocumentProvider(IServiceProvider serviceProvider) : IDocumentProvider
 {
     /// <summary>
-    /// Serializes the OpenAPI document associated with a given document name to
+    /// Serializes the AsyncApi document associated with a given document name to
     /// the provided writer.
     /// </summary>
     /// <param name="documentName">The name of the document to resolve.</param>
     /// <param name="writer">A text writer associated with the document to write to.</param>
     public async Task GenerateAsync(string documentName, TextWriter writer)
     {
-        // See OpenApiServiceCollectionExtensions.cs to learn why we lowercase the document name
+        // See AsyncApiServiceCollectionExtensions.cs to learn why we lowercase the document name
         var lowercasedDocumentName = documentName.ToLowerInvariant();
 
-        var options = serviceProvider.GetRequiredService<IOptionsMonitor<OpenApiOptions>>();
+        var options = serviceProvider.GetRequiredService<IOptionsMonitor<AsyncApiOptions>>();
         var namedOption = options.Get(lowercasedDocumentName);
-        var resolvedOpenApiVersion = namedOption.OpenApiVersion;
-        await GenerateAsync(lowercasedDocumentName, writer, resolvedOpenApiVersion);
+        var resolvedAsyncApiVersion = namedOption.AsyncApiVersion;
+        await GenerateAsync(lowercasedDocumentName, writer, resolvedAsyncApiVersion);
     }
 
     /// <summary>
-    /// Serializes the OpenAPI document associated with a given document name to
-    /// the provided writer under the provided OpenAPI spec version.
+    /// Serializes the AsyncApi document associated with a given document name to
+    /// the provided writer under the provided AsyncApi spec version.
     /// </summary>
     /// <param name="documentName">The name of the document to resolve.</param>
     /// <param name="writer">A text writer associated with the document to write to.</param>
-    /// <param name="openApiSpecVersion">The OpenAPI specification version to use when serializing the document.</param>
-    public async Task GenerateAsync(string documentName, TextWriter writer, OpenApiSpecVersion openApiSpecVersion)
+    /// <param name="AsyncApiSpecVersion">The AsyncApi specification version to use when serializing the document.</param>
+    public async Task GenerateAsync(string documentName, TextWriter writer, AsyncApiVersion AsyncApiSpecVersion)
     {
         // We need to retrieve the document name in a case-insensitive manner to support case-insensitive document name resolution.
         // The document service is registered with a key equal to the document name, but in lowercase.
-        // The GetRequiredKeyedService() method is case-sensitive, which doesn't work well for OpenAPI document names here,
+        // The GetRequiredKeyedService() method is case-sensitive, which doesn't work well for AsyncApi document names here,
         // as the document name is also used as the route to retrieve the document, so we need to ensure this is lowercased to achieve consistency with ASP.NET Core routing.
-        // See OpenApiServiceCollectionExtensions.cs for more info.
+        // See AsyncApiServiceCollectionExtensions.cs for more info.
         var lowercasedDocumentName = documentName.ToLowerInvariant();
 
         var targetDocumentService = serviceProvider.GetRequiredKeyedService<AsyncApiDocumentService>(lowercasedDocumentName);
         using var scopedService = serviceProvider.CreateScope();
         var document = await targetDocumentService.GetAsyncApiDocumentAsync(scopedService.ServiceProvider);
-        var jsonWriter = new OpenApiJsonWriter(writer);
-        await document.SerializeAsync(jsonWriter, openApiSpecVersion);
+        var jsonWriter = new AsyncApiJsonWriter(writer);
+        switch (AsyncApiSpecVersion)
+        {
+            case AsyncApiVersion.AsyncApi2_0:
+                document.SerializeV2(jsonWriter);
+                break;
+            
+                
+            case AsyncApiVersion.AsyncApi3_0:
+                document.SerializeV3(jsonWriter);
+                break;
+        }
     }
 
     /// <summary>

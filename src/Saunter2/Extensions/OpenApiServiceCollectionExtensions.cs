@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 using Saunter2.Schemas;
 using Saunter2.Services;
 using Saunter2.Services.Schemas;
-using AsyncApiConstants = Saunter2.Services.AsyncApiConstants;
 
 namespace Saunter2.Extensions;
 
@@ -90,7 +89,7 @@ public static class AsyncApiServiceCollectionExtensions
     /// </code>
     /// </example>
     public static IServiceCollection AddAsyncApi(this IServiceCollection services, Action<AsyncApiOptions> configureOptions)
-            => services.AddAsyncApi(AsyncApiConstants.DefaultDocumentName, configureOptions);
+            => services.AddAsyncApi(AsyncApiGeneratorConstants.DefaultDocumentName, configureOptions);
 
     /// <summary>
     /// Adds AsyncApi services related to the default document to the specified <see cref="IServiceCollection"/>.
@@ -105,7 +104,7 @@ public static class AsyncApiServiceCollectionExtensions
     /// </code>
     /// </example>
     public static IServiceCollection AddAsyncApi(this IServiceCollection services)
-        => services.AddAsyncApi(AsyncApiConstants.DefaultDocumentName);
+        => services.AddAsyncApi(AsyncApiGeneratorConstants.DefaultDocumentName);
 
     private static IServiceCollection AddAsyncApiCore(this IServiceCollection services, string documentName)
     {

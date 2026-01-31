@@ -3,6 +3,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using ByteBard.AsyncAPI;
+using ByteBard.AsyncAPI.Models;
 using ByteBard.AsyncAPI.Writers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -26,10 +27,10 @@ public static class AsyncApiEndpointRouteBuilderExtensions
     /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/>.</param>
     /// <param name="pattern">The route to register the endpoint on. Must include the 'documentName' route parameter.</param>
     /// <returns>An <see cref="IEndpointRouteBuilder"/> that can be used to further customize the endpoint.</returns>
-    public static IEndpointConventionBuilder MapAsyncApi(this IEndpointRouteBuilder endpoints, [StringSyntax("Route")] string pattern = AsyncApiConstants.DefaultAsyncApiRoute)
+    public static IEndpointConventionBuilder MapAsyncApi(this IEndpointRouteBuilder endpoints, [StringSyntax("Route")] string pattern = AsyncApiGeneratorConstants.DefaultAsyncApiRoute)
     {
         var options = endpoints.ServiceProvider.GetRequiredService<IOptionsMonitor<AsyncApiOptions>>();
-        return endpoints.MapGet(pattern, async (HttpContext context, string documentName = AsyncApiConstants.DefaultDocumentName) =>
+        return endpoints.MapGet(pattern, async (HttpContext context, string documentName = AsyncApiGeneratorConstants.DefaultDocumentName) =>
             {
                 // We need to retrieve the document name in a case-insensitive manner to support case-insensitive document name resolution.
                 // The document service is registered with a key equal to the document name, but in lowercase.

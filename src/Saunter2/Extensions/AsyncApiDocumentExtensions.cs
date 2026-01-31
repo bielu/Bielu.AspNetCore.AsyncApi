@@ -21,29 +21,21 @@ internal static class AsyncApiDocumentExtensions
     /// <returns>Whether the schema was added or already existed.</returns>
     public static bool AddAsyncApiJsonSchemaByReference(this AsyncApiDocument document, string schemaId, AsyncApiMultiFormatSchema schema, out AsyncApiJsonSchemaReference schemaReference)
     {
-        // Make sure the document has a workspace,
-        // AddComponent will add it to the workspace when adding the component.
-        document.Workspace ??= new();
-        // AddComponent will only add the schema if it doesn't already exist.
-        if (!document.Components.Schemas.ContainsKey(schemaId))
+        var schemaAdded = !document.Components.Schemas.ContainsKey(schemaId);
+       
+        if (schemaAdded)
         {
             document.Components.Schemas.Add(schemaId,schema);
         }
         object? description = null;
         object? example = null;
         object? defaultAnnotation = null;
-        if (schema is AsyncApiJsonSchema { Metadata: not null } actualSchema)
-        {
-            actualSchema.Metadata.TryGetValue(AsyncApiConstants.DollarRef, out description);
-            actualSchema.Metadata.TryGetValue(AsyncApiConstants.RefExampleAnnotation, out example);
-            actualSchema.Metadata.TryGetValue(AsyncApiConstants.RefDefaultAnnotation, out defaultAnnotation);
-        }
-
-        schemaReference = new AsyncApiJsonSchemaReference(schemaId, document)
+      
+        schemaReference = new AsyncApiJsonSchemaReference(schemaId)
         {
             Description = description as string,
-            Examples = example is JsonNode exampleJson ? [exampleJson] : null,
-            Default = defaultAnnotation as JsonNode,
+            Examples = example is AsyncApiAny exampleJson ? [exampleJson] : null,
+            Default = defaultAnnotation as AsyncApiAny,
         };
 
         return schemaAdded;

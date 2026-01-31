@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Saunter;
+using Saunter2.Extensions;
 
 namespace StreetlightsAPI
 {
@@ -43,6 +44,7 @@ namespace StreetlightsAPI
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddAsyncApi();
             // Add Saunter to the application services. 
             services.AddAsyncApiSchemaGeneration(options =>
             {
@@ -118,6 +120,8 @@ namespace StreetlightsAPI
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapAsyncApiDocuments();
+                endpoints.MapAsyncApi();
+                
                 endpoints.MapAsyncApiUi();
 
                 endpoints.MapControllers();

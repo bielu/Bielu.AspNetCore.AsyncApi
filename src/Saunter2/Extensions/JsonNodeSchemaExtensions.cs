@@ -456,7 +456,7 @@ internal static class JsonNodeSchemaExtensions
     /// <returns><see langword="true"/> if the schema will be componentized; otherwise, <see langword="false"/>.</returns>
     internal static bool WillBeComponentized(this JsonNode schema, [NotNullWhen(true)] out string? schemaId)
     {
-        if (schema[AsyncApiConstants.SchemaId] is JsonNode schemaIdNode
+        if (schema[AsyncApiConstants.Id] is JsonNode schemaIdNode
             && schemaIdNode.GetValueKind() == JsonValueKind.String)
         {
             schemaId = schemaIdNode.GetValue<string>();
@@ -501,7 +501,7 @@ internal static class JsonNodeSchemaExtensions
         if (schema.WillBeComponentized() &&
             propertyInfo.PropertyType != typeof(object) && propertyInfo.ShouldApplyNullablePropertySchema())
         {
-            schema[AsyncApiConstants.NullableProperty] = true;
+            schema[AsyncApiGeneratorConstants.NullableProperty] = true;
         }
     }
 

@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -74,9 +75,9 @@ internal sealed class AsyncApiDocumentService(
         var document = new AsyncApiDocument
         {
             Info = GetAsyncApiInfo(),
-            Servers = GetAsyncApiServers(httpRequest)
+         //   Servers = GetAsyncApiServers(httpRequest)
         };
-        document.Paths = await GetAsyncApiPathsAsync(document, scopedServiceProvider, operationTransformers, schemaTransformers, cancellationToken);
+       // document.Paths = await GetAsyncApiPathsAsync(document, scopedServiceProvider, operationTransformers, schemaTransformers, cancellationToken);
         try
         {
             await ApplyTransformersAsync(document, scopedServiceProvider, schemaTransformers, cancellationToken);
@@ -87,9 +88,9 @@ internal sealed class AsyncApiDocumentService(
             await FinalizeTransformers(schemaTransformers, operationTransformers);
         }
         // Call register components to support
-        // resolution of references in the document.
-        document.Workspace ??= new();
-        document.Workspace.RegisterComponents(document);
+        // // resolution of references in the document.
+        // document.Workspace ??= new();
+        // document.Workspace.RegisterComponents(document);
         if (document.Components?.Schemas is not null)
         {
             // Sort schemas by key name for better readability and consistency
@@ -160,41 +161,7 @@ internal sealed class AsyncApiDocumentService(
         }
     }
 
-    internal async Task ForEachOperationAsync(
-        AsyncApiDocument document,
-        Func<AsyncApiOperation, AsyncApiOperationTransformerContext, CancellationToken, Task> callback,
-        CancellationToken cancellationToken)
-    {
-        foreach (var pathItem in document.Paths.Values)
-        {
-            for (var i = 0; i < AsyncApiConstants.HttpMethods.Length; i++)
-            {
-                var httpMethod = AsyncApiConstants.HttpMethods[i];
-                if (pathItem.Operations is null || !pathItem.Operations.TryGetValue(httpMethod, out var operation))
-                {
-                    continue;
-                }
-
-                if (operation.Metadata is { } annotations &&
-                    annotations.TryGetValue(AsyncApiConstants.DescriptionId, out var descriptionId) &&
-                    descriptionId is string descriptionIdString &&
-                    TryGetCachedOperationTransformerContext(descriptionIdString, out var operationContext))
-                {
-                    await callback(operation, operationContext, cancellationToken);
-                }
-                else
-                {
-                    // If the cached operation transformer context was not found, throw an exception.
-                    // This can occur if the `x-aspnetcore-id` extension attribute was removed by the
-                    // user in another operation transformer or if the lookup for operation transformer
-                    // context resulted in a cache miss. As an alternative here, we could just to implement
-                    // the "slow-path" and look up the ApiDescription associated with the AsyncApiOperation
-                    // using the HttpMethod and given path, but we'll avoid this for now.
-                    throw new InvalidOperationException("Cached operation transformer context not found. Please ensure that the operation contains the `x-aspnetcore-id` extension attribute.");
-                }
-            }
-        }
-    }
+  
 
     // Note: Internal for testing.
     internal AsyncApiInfo GetAsyncApiInfo()
@@ -202,7 +169,7 @@ internal sealed class AsyncApiDocumentService(
         return new AsyncApiInfo
         {
             Title = $"{hostEnvironment.ApplicationName} | {documentName}",
-            Version = AsyncApiConstants.DefaultAsyncApiVersion
+            Version = AsyncApiGeneratorConstants.DefaultAsyncApiVersion
         };
     }
 
@@ -236,114 +203,7 @@ internal sealed class AsyncApiDocumentService(
         return [];
     }
 
-    /// <summary>
-    /// Gets the AsyncApiPaths for the document based on the ApiDescriptions.
-    /// </summary>
-    /// <remarks>
-    /// At this point in the construction of the AsyncApi document, we run
-    /// each API description through the `ShouldInclude` delegate defined in
-    /// the object to support filtering each
-    /// description instance into its appropriate document.
-    /// </remarks>
-    private async Task<AsyncApiPaths> GetAsyncApiPathsAsync(
-        AsyncApiDocument document,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiOperationTransformer[] operationTransformers,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        var descriptionsByPath = apiDescriptionGroupCollectionProvider.ApiDescriptionGroups.Items
-            .SelectMany(group => group.Items)
-            .Where(_options.ShouldInclude)
-            .GroupBy(apiDescription => apiDescription.MapRelativePathToItemPath());
-        var paths = new AsyncApiPaths();
-        foreach (var descriptions in descriptionsByPath)
-        {
-            Debug.Assert(descriptions.Key != null, "Relative path mapped to AsyncApiPath key cannot be null.");
-            var operations = await GetOperationsAsync(descriptions, document, scopedServiceProvider, operationTransformers, schemaTransformers, cancellationToken);
-            if (operations.Count > 0)
-            {
-                paths.Add(descriptions.Key, new AsyncApiPathItem { Operations = operations });
-            }
-        }
 
-        return paths;
-    }
-
-    private async Task<Dictionary<HttpMethod, AsyncApiOperation>> GetOperationsAsync(
-        IGrouping<string?, ApiDescription> descriptions,
-        AsyncApiDocument document,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiOperationTransformer[] operationTransformers,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        var operations = new Dictionary<HttpMethod, AsyncApiOperation>();
-        foreach (var description in descriptions)
-        {
-            var operation = await GetOperationAsync(description, document, scopedServiceProvider, schemaTransformers, cancellationToken);
-            operation.Metadata ??= new Dictionary<string, object>();
-            operation.Metadata.Add(AsyncApiConstants.DescriptionId, description.ActionDescriptor.Id);
-
-            var operationContext = new AsyncApiOperationTransformerContext
-            {
-                DocumentName = documentName,
-                Description = description,
-                ApplicationServices = scopedServiceProvider,
-                Document = document,
-                SchemaTransformers = schemaTransformers
-            };
-
-            _operationTransformerContextCache.TryAdd(description.ActionDescriptor.Id, operationContext);
-
-            if (description.GetHttpMethod() is not { } method)
-            {
-                // Skip unsupported HTTP methods
-                continue;
-            }
-
-            operations[method] = operation;
-
-            // Use index-based for loop to avoid allocating an enumerator with a foreach.
-            for (var i = 0; i < operationTransformers.Length; i++)
-            {
-                var transformer = operationTransformers[i];
-                await transformer.TransformAsync(operation, operationContext, cancellationToken);
-            }
-
-            // Apply any endpoint-specific operation transformers registered via
-            // the AddAsyncApiOperationTransformer extension method.
-            var endpointOperationTransformers = description.ActionDescriptor.EndpointMetadata
-                .OfType<DelegateAsyncApiOperationTransformer>();
-            foreach (var endpointOperationTransformer in endpointOperationTransformers)
-            {
-                await endpointOperationTransformer.TransformAsync(operation, operationContext, cancellationToken);
-            }
-        }
-        return operations;
-    }
-
-    private async Task<AsyncApiOperation> GetOperationAsync(
-        ApiDescription description,
-        AsyncApiDocument document,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        var tags = GetTags(description, document);
-        var operation = new AsyncApiOperation
-        {
-            // OperationId = GetOperationId(description),
-            Summary = GetSummary(description),
-            Description = GetDescription(description),
-            // Channel = GetChannel(description),
-            // Responses = await GetResponsesAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
-            // Parameters = await GetParametersAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
-            // RequestBody = await GetRequestBodyAsync(document, description, scopedServiceProvider, schemaTransformers, cancellationToken),
-            Tags = tags.ToList(),
-        };
-        return operation;
-    }
 
     private static string? GetSummary(ApiDescription description)
         => description.ActionDescriptor.EndpointMetadata.OfType<IEndpointSummaryMetadata>().LastOrDefault()?.Summary;
@@ -355,164 +215,30 @@ internal sealed class AsyncApiDocumentService(
         => description.ActionDescriptor.AttributeRouteInfo?.Name ??
             description.ActionDescriptor.EndpointMetadata.OfType<IEndpointNameMetadata>().LastOrDefault()?.EndpointName;
 
-    private static HashSet<AsyncApiTag> GetTags(ApiDescription description, AsyncApiDocument document)
-    {
-        var actionDescriptor = description.ActionDescriptor;
-        if (actionDescriptor.EndpointMetadata?.OfType<ITagsMetadata>().LastOrDefault() is { } tagsMetadata)
-        {
-            HashSet<AsyncApiTagReference> tags = [];
-            foreach (var tag in tagsMetadata.Tags)
-            {
-                document.Tags ??= new HashSet<AsyncApiTag>();
-                document.Tags.Add(new AsyncApiTag { Name = tag });
-                tags.Add(new AsyncApiTagReference(tag, document));
+    // private static HashSet<AsyncApiTag> GetTags(ApiDescription description, AsyncApiDocument document)
+    // {
+    //     var actionDescriptor = description.ActionDescriptor;
+    //     if (actionDescriptor.EndpointMetadata?.OfType<ITagsMetadata>().LastOrDefault() is { } tagsMetadata)
+    //     {
+    //         HashSet<AsyncApiTagReference> tags = [];
+    //         foreach (var tag in tagsMetadata.Tags)
+    //         {
+    //             document.Tags ??= new HashSet<AsyncApiTag>();
+    //             document.Tags.Add(new AsyncApiTag { Name = tag });
+    //             tags.Add(new AsyncApiTagReference(tag, document));
+    //
+    //         }
+    //         return tags;
+    //     }
+    //     // If no tags are specified, use the controller name as the tag. This effectively
+    //     // allows us to group endpoints by the "resource" concept (e.g. users, todos, etc.)
+    //     var controllerName = description.ActionDescriptor.RouteValues["controller"];
+    //     document.Tags ??= new HashSet<AsyncApiTag>();
+    //     document.Tags.Add(new AsyncApiTag { Name = controllerName });
+    //     return controllerName is not null ? [new(controllerName, document)] : [];
+    // }
 
-            }
-            return tags;
-        }
-        // If no tags are specified, use the controller name as the tag. This effectively
-        // allows us to group endpoints by the "resource" concept (e.g. users, todos, etc.)
-        var controllerName = description.ActionDescriptor.RouteValues["controller"];
-        document.Tags ??= new HashSet<AsyncApiTag>();
-        document.Tags.Add(new AsyncApiTag { Name = controllerName });
-        return controllerName is not null ? [new(controllerName, document)] : [];
-    }
-
-    private async Task<AsyncApiResponses> GetResponsesAsync(
-        AsyncApiDocument document,
-        ApiDescription description,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        // AsyncApi requires that each operation have a response, usually a successful one.
-        // if there are no response types defined, we assume a successful 200 OK response
-        // with no content by default.
-        if (description.SupportedResponseTypes.Count == 0)
-        {
-            return new AsyncApiResponses
-            {
-                ["200"] = await GetResponseAsync(document, description, StatusCodes.Status200OK, _defaultApiResponseType, scopedServiceProvider, schemaTransformers, cancellationToken)
-            };
-        }
-
-        var responses = new AsyncApiResponses();
-        foreach (var responseType in description.SupportedResponseTypes)
-        {
-            // The "default" response type is a special case in AsyncApi used to describe
-            // the response for all HTTP status codes that are not explicitly defined
-            // for a given operation. This is typically used to describe catch-all scenarios
-            // like error responses.
-            var responseKey = responseType.IsDefaultResponse
-                ? AsyncApiConstants.DefaultAsyncApiResponseKey
-                : responseType.StatusCode.ToString(CultureInfo.InvariantCulture);
-            responses.Add(responseKey, await GetResponseAsync(document, description, responseType.StatusCode, responseType, scopedServiceProvider, schemaTransformers, cancellationToken));
-        }
-        return responses;
-    }
-
-    private async Task<AsyncApiResponse> GetResponseAsync(
-        AsyncApiDocument document,
-        ApiDescription apiDescription,
-        int statusCode,
-        ApiResponseType apiResponseType,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        var response = new AsyncApiResponse
-        {
-            Description = apiResponseType.Description ?? ReasonPhrases.GetReasonPhrase(statusCode),
-            Content = new Dictionary<string, AsyncApiMediaType>()
-        };
-
-        // ApiResponseFormats aggregates information about the supported response content types
-        // from different types of Produces metadata. This is handled by ApiExplorer so looking
-        // up values in ApiResponseFormats should provide us a complete set of the information
-        // encoded in Produces metadata added via attributes or extension methods.
-        var apiResponseFormatContentTypes = apiResponseType.ApiResponseFormats
-            .Select(responseFormat => responseFormat.MediaType);
-        foreach (var contentType in apiResponseFormatContentTypes)
-        {
-            IAsyncApiSchema? schema = null;
-            if (apiResponseType.Type is { } responseType)
-            {
-                schema = await _componentService.GetOrCreateSchemaAsync(document, responseType, scopedServiceProvider, schemaTransformers, null, cancellationToken);
-                schema = apiResponseType.ShouldApplyNullableResponseSchema(apiDescription)
-                    ? schema.CreateOneOfNullableWrapper()
-                    : schema;
-            }
-            response.Content[contentType] = new AsyncApiMediaType { Schema = schema ?? new AsyncApiJsonSchema() };
-        }
-
-        // MVC's `ProducesAttribute` doesn't implement the produces metadata that the ApiExplorer
-        // looks for when generating ApiResponseFormats above so we need to pull the content
-        // types defined there separately.
-        var explicitContentTypes = apiDescription.ActionDescriptor.EndpointMetadata
-            .OfType<ProducesAttribute>()
-            .SelectMany(attr => attr.ContentTypes);
-        foreach (var contentType in explicitContentTypes)
-        {
-            response.Content.TryAdd(contentType, new AsyncApiMediaType());
-        }
-
-        return response;
-    }
-
-    private async Task<List<AsyncApiParameter>?> GetParametersAsync(
-        AsyncApiDocument document,
-        ApiDescription description,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        List<AsyncApiParameter>? parameters = null;
-        foreach (var parameter in description.ParameterDescriptions)
-        {
-            if (ShouldIgnoreParameter(parameter))
-            {
-                continue;
-            }
-
-            var AsyncApiParameter = new AsyncApiParameter
-            {
-                Name = parameter.Name,
-                In = parameter.Source.Id switch
-                {
-                    "Query" => ParameterLocation.Query,
-                    "Header" => ParameterLocation.Header,
-                    "Path" => ParameterLocation.Path,
-                    _ => ParameterLocation.Query
-                },
-                Required = IsRequired(parameter),
-                Schema = await _componentService.GetOrCreateSchemaAsync(document, GetTargetType(description, parameter), scopedServiceProvider, schemaTransformers, parameter, cancellationToken: cancellationToken),
-                Description = GetParameterDescriptionFromAttribute(parameter)
-            };
-
-            parameters ??= [];
-            parameters.Add(AsyncApiParameter);
-        }
-
-        return parameters;
-
-        static bool ShouldIgnoreParameter(ApiParameterDescription parameter)
-        {
-            if (parameter.IsRequestBodyParameter())
-            {
-                // Parameters that should be in the request body should not be
-                // populated in the parameters list.
-                return true;
-            }
-            else if (parameter.Source == BindingSource.Header && _disallowedHeaderParameters.Contains(parameter.Name))
-            {
-                // AsyncApi 3.0 states certain headers are "not allowed" to be defined as parameters.
-                // See https://github.com/dotnet/aspnetcore/issues/57305 for more context.
-                return true;
-            }
-
-            return false;
-        }
-    }
+   
 
     private static bool IsRequired(ApiParameterDescription parameter)
     {
@@ -532,7 +258,7 @@ internal sealed class AsyncApiDocumentService(
             return parameterDescription.Description;
         }
 
-        if (parameter.ModelMetadata is Mvc.ModelBinding.Metadata.DefaultModelMetadata { Attributes.PropertyAttributes.Count: > 0 } metadata &&
+        if (parameter.ModelMetadata is DefaultModelMetadata { Attributes.PropertyAttributes.Count: > 0 } metadata &&
             metadata.Attributes.PropertyAttributes.OfType<DescriptionAttribute>().LastOrDefault() is { } propertyDescription)
         {
             return propertyDescription.Description;
@@ -541,236 +267,7 @@ internal sealed class AsyncApiDocumentService(
         return null;
     }
 
-    private async Task<AsyncApiRequestBody?> GetRequestBodyAsync(AsyncApiDocument document, ApiDescription description, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, CancellationToken cancellationToken)
-    {
-        // Only one parameter can be bound from the body in each request.
-        if (description.TryGetBodyParameter(out var bodyParameter))
-        {
-            return await GetJsonRequestBody(document, description.SupportedRequestFormats, bodyParameter, scopedServiceProvider, schemaTransformers, cancellationToken);
-        }
-        // If there are no body parameters, check for form parameters.
-        // Note: Form parameters and body parameters cannot exist simultaneously
-        // in the same endpoint.
-        if (description.TryGetFormParameters(out var formParameters))
-        {
-            var endpointMetadata = description.ActionDescriptor.EndpointMetadata;
-            return await GetFormRequestBody(document, description.SupportedRequestFormats, formParameters, endpointMetadata, scopedServiceProvider, schemaTransformers, cancellationToken);
-        }
-        return null;
-    }
-
-    private async Task<AsyncApiRequestBody> GetFormRequestBody(
-        AsyncApiDocument document,
-        IList<ApiRequestFormat> supportedRequestFormats,
-        IEnumerable<ApiParameterDescription> formParameters,
-        IList<object> endpointMetadata,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        if (supportedRequestFormats.Count == 0)
-        {
-            // Assume "application/x-www-form-urlencoded" as the default media type
-            // to match the default assumed in IFormFeature.
-            supportedRequestFormats = [new ApiRequestFormat { MediaType = "application/x-www-form-urlencoded" }];
-        }
-
-        var requestBody = new AsyncApiRequestBody
-        {
-            // Form bodies are always required because the framework doesn't support
-            // serializing a form collection from an empty body. Instead, requiredness
-            // must be set on a per-parameter basis. See below.
-            Required = true,
-            Content = new Dictionary<string, AsyncApiMediaType>()
-        };
-
-        var schema = new AsyncApiJsonSchema { Type = JsonSchemaType.Object, Properties = new Dictionary<string, IAsyncApiSchema>() };
-        IAsyncApiSchema? complexTypeSchema = null;
-        // Group form parameters by their name because MVC explodes form parameters that are bound from the
-        // same model instance into separate ApiParameterDescriptions in ApiExplorer, while minimal APIs does not.
-        //
-        // public record Todo(int Id, string Title, bool Completed, DateTime CreatedAt)
-        // public void PostMvc([FromForm] Todo person) { }
-        // app.MapGet("/form-todo", ([FromForm] Todo todo) => Results.Ok(todo));
-        //
-        // In the example above, MVC's ApiExplorer will bind four separate arguments to the Todo model while minimal APIs will
-        // bind a single Todo model instance to the todo parameter. Grouping by name allows us to handle both cases.
-        var groupedFormParameters = formParameters.GroupBy(parameter => parameter.ParameterDescriptor.Name);
-        // If there is only one real parameter derived from the form body, then set it directly in the schema.
-        var hasMultipleFormParameters = groupedFormParameters.Count() > 1;
-        foreach (var parameter in groupedFormParameters)
-        {
-            // ContainerType is not null when the parameter has been exploded into separate API
-            // parameters by ApiExplorer as in the MVC model.
-            if (parameter.All(parameter => parameter.ModelMetadata.ContainerType is null))
-            {
-                var description = parameter.Single();
-                var parameterSchema = await _componentService.GetOrCreateSchemaAsync(document, description.Type, scopedServiceProvider, schemaTransformers, description, cancellationToken: cancellationToken);
-                // Form files are keyed by their parameter name so we must capture the parameter name
-                // as a property in the schema.
-                if (description.Type == typeof(IFormFile) || description.Type == typeof(IFormFileCollection))
-                {
-                    if (IsRequired(description))
-                    {
-                        schema.Required ??= new HashSet<string>();
-                        schema.Required.Add(description.Name);
-                    }
-                    if (hasMultipleFormParameters)
-                    {
-                        schema.AllOf ??= [];
-                        schema.AllOf.Add(new AsyncApiJsonSchema
-                        {
-                            Type = JsonSchemaType.Object,
-                            Properties = new Dictionary<string, IAsyncApiSchema>
-                            {
-                                [description.Name] = parameterSchema
-                            }
-                        });
-                    }
-                    else
-                    {
-                        schema.Properties ??= new Dictionary<string, IAsyncApiSchema>();
-                        schema.Properties[description.Name] = parameterSchema;
-                    }
-                }
-                else
-                {
-                    // Resolve complex type state from endpoint metadata when checking for
-                    // minimal API types to use trim friendly code paths.
-                    var isComplexType = endpointMetadata
-                        .OfType<IParameterBindingMetadata>()
-                        .SingleOrDefault(parameter => parameter.Name == description.Name)?
-                        .HasTryParse == false;
-                    if (hasMultipleFormParameters)
-                    {
-                        // Here and below: POCOs do not need to be need under their parameter name in the grouping.
-                        // The form-binding implementation will capture them implicitly.
-                        if (isComplexType)
-                        {
-                            schema.AllOf ??= [];
-                            schema.AllOf.Add(parameterSchema);
-                        }
-                        else
-                        {
-                            if (IsRequired(description))
-                            {
-                                schema.Required ??= new HashSet<string>();
-                                schema.Required.Add(description.Name);
-                            }
-                            schema.AllOf ??= [];
-                            schema.AllOf.Add(new AsyncApiJsonSchema
-                            {
-                                Type = JsonSchemaType.Object,
-                                Properties = new Dictionary<string, IAsyncApiSchema>
-                                {
-                                    [description.Name] = parameterSchema
-                                }
-                            });
-                        }
-                    }
-                    else
-                    {
-                        if (isComplexType)
-                        {
-                            complexTypeSchema = parameterSchema;
-                        }
-                        else
-                        {
-                            if (IsRequired(description))
-                            {
-                                schema.Required ??= new HashSet<string>();
-                                schema.Required.Add(description.Name);
-                            }
-                            schema.Properties ??= new Dictionary<string, IAsyncApiSchema>();
-                            schema.Properties[description.Name] = parameterSchema;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                if (hasMultipleFormParameters)
-                {
-                    var propertySchema = new AsyncApiJsonSchema { Type = JsonSchemaType.Object, Properties = new Dictionary<string, IAsyncApiSchema>() };
-                    foreach (var description in parameter)
-                    {
-                        propertySchema.Properties[description.Name] = await _componentService.GetOrCreateSchemaAsync(document, description.Type, scopedServiceProvider, schemaTransformers, description, cancellationToken: cancellationToken);
-                    }
-                    schema.AllOf ??= [];
-                    schema.AllOf.Add(propertySchema);
-                }
-                else
-                {
-                    foreach (var description in parameter)
-                    {
-                        schema.Properties ??= new Dictionary<string, IAsyncApiSchema>();
-                        schema.Properties[description.Name] = await _componentService.GetOrCreateSchemaAsync(document, description.Type, scopedServiceProvider, schemaTransformers, description, cancellationToken: cancellationToken);
-                    }
-                }
-            }
-        }
-
-        foreach (var requestFormat in supportedRequestFormats)
-        {
-            var contentType = requestFormat.MediaType;
-            requestBody.Content[contentType] = new AsyncApiMediaType
-            {
-                Schema = complexTypeSchema ?? schema
-            };
-        }
-
-        return requestBody;
-    }
-
-    private async Task<AsyncApiRequestBody> GetJsonRequestBody(
-        AsyncApiDocument document,
-        IList<ApiRequestFormat> supportedRequestFormats,
-        ApiParameterDescription bodyParameter,
-        IServiceProvider scopedServiceProvider,
-        IAsyncApiSchemaTransformer[] schemaTransformers,
-        CancellationToken cancellationToken)
-    {
-        if (supportedRequestFormats.Count == 0)
-        {
-            if (bodyParameter.Type == typeof(Stream) || bodyParameter.Type == typeof(PipeReader))
-            {
-                // Assume "application/octet-stream" as the default media type
-                // for stream-based parameter types.
-                supportedRequestFormats = [new ApiRequestFormat { MediaType = "application/octet-stream" }];
-            }
-            else if (bodyParameter.Type.IsJsonPatchDocument())
-            {
-                // Assume "application/json-patch+json" as the default media type
-                // for JSON Patch documents.
-                supportedRequestFormats = [new ApiRequestFormat { MediaType = "application/json-patch+json" }];
-            }
-            else
-            {
-                // Assume "application/json" as the default media type
-                // for everything else.
-                supportedRequestFormats = [new ApiRequestFormat { MediaType = "application/json" }];
-            }
-        }
-
-        var requestBody = new AsyncApiRequestBody
-        {
-            Required = IsRequired(bodyParameter),
-            Content = new Dictionary<string, AsyncApiMediaType>(),
-            Description = GetParameterDescriptionFromAttribute(bodyParameter)
-        };
-
-        foreach (var requestFormat in supportedRequestFormats)
-        {
-            var contentType = requestFormat.MediaType;
-            var schema = await _componentService.GetOrCreateSchemaAsync(document, bodyParameter.Type, scopedServiceProvider, schemaTransformers, bodyParameter, cancellationToken: cancellationToken);
-            schema = bodyParameter.ShouldApplyNullableRequestSchema()
-                ? schema.CreateOneOfNullableWrapper()
-                : schema;
-            requestBody.Content[contentType] = new AsyncApiMediaType { Schema = schema };
-        }
-
-        return requestBody;
-    }
+   
 
     /// <remarks>
     /// This method is used to determine the target type for a given parameter. The target type

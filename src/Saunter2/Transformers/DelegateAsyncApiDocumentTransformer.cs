@@ -32,10 +32,10 @@ internal sealed class DelegateAsyncApiDocumentTransformer : IAsyncApiDocumentTra
         if (_operationTransformer != null)
         {
             var documentService = context.ApplicationServices.GetRequiredKeyedService<AsyncApiDocumentService>(context.DocumentName);
-            await documentService.ForEachOperationAsync(
-                document,
-                async (operation, operationContext, token) => await _operationTransformer(operation, operationContext, token),
-                cancellationToken);
+            // await documentService.ForEachOperationAsync(
+            //     document,
+            //     async (operation, operationContext, token) => await _operationTransformer(operation, operationContext, token),
+            //     cancellationToken);
         }
     }
 }

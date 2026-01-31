@@ -54,7 +54,7 @@ internal static class JsonTypeInfoExtensions
     {
         var type = jsonTypeInfo.Type;
         var underlyingType = Nullable.GetUnderlyingType(type);
-        if (isTopLevel && AsyncApiConstants.PrimitiveTypes.Contains(underlyingType ?? type))
+        if (isTopLevel && AsyncApiGeneratorConstants.PrimitiveTypes.Contains(underlyingType ?? type))
         {
             return null;
         }

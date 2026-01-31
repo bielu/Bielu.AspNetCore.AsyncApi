@@ -78,8 +78,6 @@ internal sealed class AsyncApiGenerator
             
             Summary = metadata.GetMetadata<IEndpointSummaryMetadata>()?.Summary,
             Description = metadata.GetMetadata<IEndpointDescriptionMetadata>()?.Description,
-            Tags = GetOperationTags(methodInfo, metadata),
-            para = GetAsyncApiParameters(methodInfo, pattern, disableInferredBody),
             Messages = GetAsyncApiMessages(methodInfo, metadata, pattern, disableInferredBody),
             Reply = GetAsyncApiResponses(methodInfo, metadata)
         };

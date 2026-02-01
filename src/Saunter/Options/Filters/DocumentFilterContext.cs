@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 
+namespace Saunter.Options.Filters;
+
 public class DocumentFilterContext
 {
     public DocumentFilterContext(IEnumerable<Type> asyncApiTypes)

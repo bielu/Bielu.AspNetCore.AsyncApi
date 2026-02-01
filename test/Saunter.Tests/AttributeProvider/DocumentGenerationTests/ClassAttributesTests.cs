@@ -1,7 +1,7 @@
 ﻿using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
-using Saunter.AttributeProvider.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes;
 using Shouldly;
 using Xunit;
 

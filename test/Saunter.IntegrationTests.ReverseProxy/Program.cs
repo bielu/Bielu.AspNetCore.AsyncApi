@@ -10,7 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Saunter.AttributeProvider.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes;
 
 namespace Saunter.IntegrationTests.ReverseProxy
 {

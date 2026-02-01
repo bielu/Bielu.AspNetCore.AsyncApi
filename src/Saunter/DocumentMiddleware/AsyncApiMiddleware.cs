@@ -8,34 +8,29 @@ using Saunter.Options;
 
 namespace Saunter.DocumentMiddleware
 {
-    internal class AsyncApiMiddleware
+    internal class AsyncApiMiddleware(
+        RequestDelegate next,
+        IOptions<AsyncApiOptions> options,
+        IAsyncApiDocumentProvider asyncApiDocumentProvider)
     {
-        private readonly RequestDelegate _next;
-        private readonly IAsyncApiDocumentProvider _asyncApiDocumentProvider;
-        private readonly AsyncApiOptions _options;
-
-        public AsyncApiMiddleware(RequestDelegate next, IOptions<AsyncApiOptions> options, IAsyncApiDocumentProvider asyncApiDocumentProvider)
-        {
-            _next = next;
-            _asyncApiDocumentProvider = asyncApiDocumentProvider;
-            _options = options.Value;
-        }
+        private readonly AsyncApiOptions _options = options.Value;
 
         public async Task Invoke(HttpContext context)
         {
             if (!IsRequestingAsyncApiSchema(context.Request))
             {
-                await _next(context);
+                await next(context);
                 return;
             }
 
             if (context.TryGetDocument(out var documentName) && !_options.NamedApis.TryGetValue(documentName, out _))
             {
-                await _next(context);
+                await next(context);
                 return;
             }
 
-            var asyncApiSchema = _asyncApiDocumentProvider.GetDocument(documentName, _options);
+            var asyncApiSchema = asyncApiDocumentProvider.
+                GetDocument(documentName, _options);
 
             await RespondWithAsyncApiSchemaJson(context.Response, asyncApiSchema);
         }

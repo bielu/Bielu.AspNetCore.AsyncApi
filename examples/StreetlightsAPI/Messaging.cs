@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
+using Bielu.AspNetCore.AsyncApi.Attributes.Attributes;
 using Microsoft.Extensions.Logging;
-using Saunter.AttributeProvider.Attributes;
 
 namespace StreetlightsAPI
 {

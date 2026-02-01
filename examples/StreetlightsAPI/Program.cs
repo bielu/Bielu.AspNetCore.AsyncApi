@@ -1,16 +1,19 @@
 ﻿using System.Linq;
+using Bielu.AspNetCore.AsyncApi.Extensions;
+using Bielu.AspNetCore.AsyncApi.UI;
+using ByteBard.AsyncAPI.Bindings.Http;
 using LEGO.AsyncAPI.Bindings.AMQP;
 using LEGO.AsyncAPI.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Saunter;
-using Saunter2.Extensions;
-
+using amqp= ByteBard.AsyncAPI.Bindings.AsyncApiBinding;
 namespace StreetlightsAPI
 {
     public class Program
@@ -44,7 +47,32 @@ namespace StreetlightsAPI
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddAsyncApi();
+            services.AddAsyncApi(e =>
+            {
+                e.AddServer("mosquitto", "test.mosquitto.org", "mqtt", server =>
+                {
+                    server.Description = "Test Mosquitto MQTT Broker";
+                });
+                e.AddServer("webapi", "localhost:5000", "http", server =>
+                {
+                    server.Description = "Local HTTP API Server";
+                });
+                e.WithDefaultContentType("application/json")
+                    .WithDescription(
+                        "The Smartylighting Streetlights API allows you to remotely manage the city lights.")
+                    .WithLicense("Apache 2.0", "https://www.apache.org/licenses/LICENSE-2.0");
+                e.AddChannelBinding("amqpDev",
+                        new ByteBard.AsyncAPI.Bindings.AMQP.AMQPChannelBinding()
+                        {
+                            Is = ByteBard.AsyncAPI.Bindings.AMQP.ChannelType.Queue,
+                            Exchange = new() { Name = "example-exchange", Vhost = "/development" }
+                        })
+                    .AddOperationBinding("postBind",
+                        new HttpOperationBinding()
+                        {
+                            Method = "POST", Type = HttpOperationBinding.HttpOperationType.Response
+                        });
+            });
             // Add Saunter to the application services. 
             services.AddAsyncApiSchemaGeneration(options =>
             {
@@ -54,21 +82,24 @@ namespace StreetlightsAPI
 
                 options.AsyncApi = new AsyncApiDocument
                 {
-                    Info = new AsyncApiInfo()
-                    {
-                        Title = "Streetlights API",
-                        Version = "1.0.0",
-                        Description = "The Smartylighting Streetlights API allows you to remotely manage the city lights.",
-                        License = new AsyncApiLicense()
+                    Info =
+                        new AsyncApiInfo()
                         {
-                            Name = "Apache 2.0",
-                            Url = new("https://www.apache.org/licenses/LICENSE-2.0"),
-                        }
-                    },
+                            Title = "Streetlights API",
+                            Version = "1.0.0",
+                            Description =
+                                "The Smartylighting Streetlights API allows you to remotely manage the city lights.",
+                            License =
+                                new AsyncApiLicense()
+                                {
+                                    Name = "Apache 2.0",
+                                    Url = new("https://www.apache.org/licenses/LICENSE-2.0"),
+                                }
+                        },
                     Servers =
                     {
-                        ["mosquitto"] = new AsyncApiServer(){ Url = "test.mosquitto.org",  Protocol = "mqtt"},
-                        ["webapi"] = new AsyncApiServer(){ Url = "localhost:5000",  Protocol = "http"},
+                        ["mosquitto"] = new AsyncApiServer() { Url = "test.mosquitto.org", Protocol = "mqtt" },
+                        ["webapi"] = new AsyncApiServer() { Url = "localhost:5000", Protocol = "http" },
                     },
                     Components = new()
                     {
@@ -79,11 +110,8 @@ namespace StreetlightsAPI
                                 new AMQPChannelBinding
                                 {
                                     Is = ChannelType.Queue,
-                                    Exchange = new()
-                                    {
-                                        Name = "example-exchange",
-                                        Vhost = "/development"
-                                    }
+                                    Exchange =
+                                        new() { Name = "example-exchange", Vhost = "/development" }
                                 }
                             }
                         },
@@ -96,7 +124,8 @@ namespace StreetlightsAPI
                                     new LEGO.AsyncAPI.Bindings.Http.HttpOperationBinding
                                     {
                                         Method = "POST",
-                                        Type = LEGO.AsyncAPI.Bindings.Http.HttpOperationBinding.HttpOperationType.Response,
+                                        Type = LEGO.AsyncAPI.Bindings.Http.HttpOperationBinding
+                                            .HttpOperationType.Response,
                                     }
                                 }
                             }
@@ -116,22 +145,26 @@ namespace StreetlightsAPI
 
             app.UseRouting();
             app.UseCors(builder => builder.AllowAnyOrigin().AllowAnyMethod());
-
+        
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapAsyncApiDocuments();
                 endpoints.MapAsyncApi();
-                
+
                 endpoints.MapAsyncApiUi();
 
                 endpoints.MapControllers();
             });
-
+            app.UseAsyncApiUi(options =>
+            {
+                    options.UiBaseRoute = "/asyncapiv2/";
+            });
             // Print the AsyncAPI doc location
             var logger = app.ApplicationServices.GetService<ILoggerFactory>().CreateLogger<Program>();
             var addresses = app.ServerFeatures.Get<IServerAddressesFeature>().Addresses;
 
-            logger.LogInformation("AsyncAPI doc available at: {URL}", $"{addresses.FirstOrDefault()}/asyncapi/asyncapi.json");
+            logger.LogInformation("AsyncAPI doc available at: {URL}",
+                $"{addresses.FirstOrDefault()}/asyncapi/asyncapi.json");
             logger.LogInformation("AsyncAPI UI available at: {URL}", $"{addresses.FirstOrDefault()}/asyncapi/ui/");
         }
     }

@@ -1,5 +1,7 @@
 ﻿using System.Reflection;
-using Saunter.AttributeProvider.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes.Attributes;
+
+namespace Saunter.Options.Filters;
 
 public class ChannelFilterContext
 {

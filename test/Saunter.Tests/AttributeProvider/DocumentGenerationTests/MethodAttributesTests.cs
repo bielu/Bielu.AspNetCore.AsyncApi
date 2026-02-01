@@ -1,6 +1,6 @@
 ﻿using System;
 using LEGO.AsyncAPI.Bindings.Kafka;
-using Saunter.AttributeProvider.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes;
 using Shouldly;
 using Xunit;
 

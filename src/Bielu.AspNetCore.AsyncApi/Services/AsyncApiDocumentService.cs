@@ -1,0 +1,529 @@
+
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using System.Collections.Concurrent;
+using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using Bielu.AspNetCore.AsyncApi.Attributes.Attributes;
+using Bielu.AspNetCore.AsyncApi.Services.Schemas;
+using Bielu.AspNetCore.AsyncApi.Transformers;
+using ByteBard.AsyncAPI.Models;
+using ByteBard.AsyncAPI.Models.Interfaces;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Mvc.ApiExplorer;
+using Microsoft.AspNetCore.Mvc.ApplicationParts;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
+using AttrOperationType = Bielu.AspNetCore.AsyncApi.Attributes.Attributes.OperationType;
+
+namespace Bielu.AspNetCore.AsyncApi.Services;
+
+internal sealed class AsyncApiDocumentService(
+    [Microsoft.Extensions.DependencyInjection.ServiceKey]
+    string documentName,
+    IApiDescriptionGroupCollectionProvider apiDescriptionGroupCollectionProvider,
+    IHostEnvironment hostEnvironment,
+    IOptionsMonitor<AsyncApiOptions> optionsMonitor,
+    IServiceProvider serviceProvider,
+    ApplicationPartManager applicationPartManager,
+    IServer? server = null) : IAsyncApiDocumentProvider
+{
+    private readonly AsyncApiOptions _options = optionsMonitor.Get(documentName);
+
+    private readonly AsyncApiJsonSchemaService _componentService =
+        serviceProvider.GetRequiredKeyedService<AsyncApiJsonSchemaService>(documentName);
+
+    private readonly ConcurrentDictionary<string, AsyncApiOperationTransformerContext>
+        _operationTransformerContextCache = new();
+
+    private static readonly ApiResponseType _defaultApiResponseType = new() { StatusCode = StatusCodes.Status200OK };
+
+    private static readonly FrozenSet<string> _disallowedHeaderParameters =
+        new[] { HeaderNames.Accept, HeaderNames.Authorization, HeaderNames.ContentType }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    internal bool TryGetCachedOperationTransformerContext(string descriptionId,
+        [NotNullWhen(true)] out AsyncApiOperationTransformerContext? context)
+        => _operationTransformerContextCache.TryGetValue(descriptionId, out context);
+
+    public async Task<AsyncApiDocument> GetAsyncApiDocumentAsync(IServiceProvider scopedServiceProvider,
+        HttpRequest? httpRequest = null, CancellationToken cancellationToken = default)
+    {
+        var schemaTransformers = _options.SchemaTransformers.Count > 0
+            ? new IAsyncApiSchemaTransformer[_options.SchemaTransformers.Count]
+            : [];
+        var operationTransformers = _options.OperationTransformers.Count > 0
+            ? new IAsyncApiOperationTransformer[_options.OperationTransformers.Count]
+            : [];
+
+        InitializeTransformers(scopedServiceProvider, schemaTransformers, operationTransformers);
+
+        var document = new AsyncApiDocument
+        {
+            Info = GetAsyncApiInfo(),
+            Servers = GetAsyncApiServers(httpRequest),
+            Components = new AsyncApiComponents { Schemas = new Dictionary<string, AsyncApiMultiFormatSchema>() },
+            Channels = new Dictionary<string, AsyncApiChannel>(StringComparer.Ordinal),
+            Operations = new Dictionary<string, AsyncApiOperation>(StringComparer.Ordinal)
+        };
+
+        await PopulateFromAttributeProjectAsync(document, scopedServiceProvider, schemaTransformers, cancellationToken);
+        ApplyBindingsFromOptions(document);
+
+        try
+        {
+            await ApplyTransformersAsync(document, scopedServiceProvider, schemaTransformers, cancellationToken);
+        }
+        finally
+        {
+            await FinalizeTransformers(schemaTransformers, operationTransformers);
+        }
+
+        if (document.Components?.Schemas is not null)
+        {
+            document.Components.Schemas = new Dictionary<string, AsyncApiMultiFormatSchema>(
+                document.Components.Schemas.OrderBy(kvp => kvp.Key),
+                StringComparer.Ordinal);
+        }
+
+        return document;
+    }
+
+    public Task<AsyncApiDocument> GetAsyncApiDocumentAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return GetAsyncApiDocumentAsync(serviceProvider, httpRequest: null, cancellationToken);
+    }
+
+    private async Task PopulateFromAttributeProjectAsync(
+        AsyncApiDocument document,
+        IServiceProvider scopedServiceProvider,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
+        CancellationToken cancellationToken)
+    {
+        document.Components ??= new AsyncApiComponents();
+        document.Components.Schemas ??= new Dictionary<string, AsyncApiMultiFormatSchema>();
+        document.Components.Messages ??= new Dictionary<string, AsyncApiMessage>();
+
+        foreach (var asm in GetCandidateAssembliesForAttributeScan())
+        {
+            foreach (var type in SafeGetTypes(asm))
+            {
+                var asyncApiAttr = type.GetCustomAttribute<AsyncApiAttribute>(inherit: true);
+                if (asyncApiAttr is null)
+                    continue;
+
+                if (asyncApiAttr.DocumentName is not null &&
+                    !string.Equals(asyncApiAttr.DocumentName, documentName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var members = new List<MemberInfo> { type };
+                members.AddRange(type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly));
+
+                foreach (var member in members)
+                {
+                    var channelAttr = member.GetCustomAttribute<ChannelAttribute>(inherit: true);
+                    if (channelAttr is null)
+                        continue;
+
+                    var channel = GetOrCreateChannel(document, channelAttr);
+
+                    ApplyChannelParametersFromAttributes(channel, member);
+                    ApplyChannelServersFromAttributes(channel, channelAttr);
+
+                    var messageRefs = await ApplyChannelMessagesFromAttributesAsync(
+                        document, channel, member, scopedServiceProvider, schemaTransformers, cancellationToken);
+
+                    ApplyOperationsFromAttributes(document, channel, member, messageRefs);
+                }
+            }
+        }
+    }
+
+    private AsyncApiChannel GetOrCreateChannel(AsyncApiDocument document, ChannelAttribute channelAttr)
+    {
+        if (document.Channels.TryGetValue(channelAttr.Name, out var existing))
+        {
+            existing.Description ??= channelAttr.Description;
+            existing.Address ??= channelAttr.Name;
+            return existing;
+        }
+
+        var created = new AsyncApiChannel
+        {
+            Address = channelAttr.Name,
+            Description = channelAttr.Description ?? string.Empty,
+        };
+
+        document.Channels[channelAttr.Name] = created;
+        return created;
+    }
+
+    private static void ApplyChannelParametersFromAttributes(AsyncApiChannel channel, MemberInfo member)
+    {
+        var paramAttrs = member.GetCustomAttributes<ChannelParameterAttribute>(inherit: true);
+        foreach (var p in paramAttrs)
+        {
+            if (!channel.Parameters.ContainsKey(p.Name))
+            {
+                channel.Parameters[p.Name] = new AsyncApiParameter
+                {
+                    Description = p.Description,
+                    Location = p.Location
+                };
+            }
+        }
+    }
+
+    private static void ApplyChannelServersFromAttributes(AsyncApiChannel channel, ChannelAttribute channelAttr)
+    {
+        if (channelAttr.Servers is null || channelAttr.Servers.Length == 0)
+            return;
+
+        foreach (var serverKey in channelAttr.Servers.Where(s => !string.IsNullOrWhiteSpace(s)))
+        {
+            // Avoid duplicates using reflection to check reference ID
+            var alreadyExists = channel.Servers.Any(s =>
+            {
+                if (TryGet(s, "Reference", out var refObj) && refObj != null)
+                {
+                    if (TryGet(refObj, "Id", out var idObj) && idObj is string id)
+                        return string.Equals(id, serverKey, StringComparison.OrdinalIgnoreCase);
+                }
+                return false;
+            });
+
+            if (alreadyExists)
+                continue;
+
+            channel.Servers.Add(new AsyncApiServerReference(serverKey));
+        }
+    }
+
+    private async Task<List<string>> ApplyChannelMessagesFromAttributesAsync(
+        AsyncApiDocument document,
+        AsyncApiChannel channel,
+        MemberInfo member,
+        IServiceProvider scopedServiceProvider,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
+        CancellationToken cancellationToken)
+    {
+        var messageKeys = new List<string>();
+        var messageAttrs = member.GetCustomAttributes<MessageAttribute>(inherit: true);
+
+        foreach (var msgAttr in messageAttrs)
+        {
+            var payloadType = msgAttr.PayloadType;
+            var messageKey = msgAttr.MessageId
+                             ?? msgAttr.Name
+                             ?? ToCamelCase(payloadType.Name);
+
+            messageKeys.Add(messageKey);
+
+            if (channel.Messages.ContainsKey(messageKey))
+                continue;
+
+            var payloadSchema = await _componentService.GetOrCreateSchemaAsync(
+                document,
+                payloadType,
+                scopedServiceProvider,
+                schemaTransformers,
+                parameterDescription: null,
+                cancellationToken: cancellationToken);
+
+            var schemaKey = ToCamelCase(payloadType.Name);
+            if (!document.Components.Schemas.ContainsKey(schemaKey))
+            {
+                document.Components.Schemas[schemaKey] = new AsyncApiMultiFormatSchema
+                {
+                    Schema = payloadSchema as AsyncApiJsonSchema
+                };
+            }
+
+            var message = new AsyncApiMessage
+            {
+                Name = msgAttr.Name ?? messageKey,
+                Title = msgAttr.Title ?? messageKey,
+                Summary = msgAttr.Summary,
+                Description = msgAttr.Description,
+                Payload = new AsyncApiJsonSchemaReference(schemaKey)
+            };
+
+            channel.Messages[messageKey] = message;
+
+            if (!document.Components.Messages.ContainsKey(messageKey))
+            {
+                document.Components.Messages[messageKey] = message;
+            }
+        }
+
+        return messageKeys;
+    }
+
+    private void ApplyOperationsFromAttributes(
+        AsyncApiDocument document,
+        AsyncApiChannel channel,
+        MemberInfo member,
+        List<string> messageKeys)
+    {
+        var opAttrs = member.GetCustomAttributes<OperationAttribute>(inherit: true);
+        foreach (var opAttr in opAttrs)
+        {
+            var opId = opAttr.OperationId;
+            if (string.IsNullOrWhiteSpace(opId))
+            {
+                opId = $"{member.DeclaringType?.Name ?? "Type"}_{member.Name}_{opAttr.OperationType}";
+            }
+
+            if (document.Operations.ContainsKey(opId))
+                continue;
+
+            var op = new AsyncApiOperation
+            {
+                Summary = opAttr.Summary,
+                Description = opAttr.Description,
+            };
+
+            op.Action = opAttr.OperationType == AttrOperationType.Subscribe
+                ? AsyncApiAction.Send
+                : AsyncApiAction.Receive;
+
+            op.Channel = new AsyncApiChannelReference(channel.Address);
+
+            if (opAttr.Tags is { Length: > 0 })
+            {
+                op.Tags ??= new List<AsyncApiTag>();
+                foreach (var tagName in opAttr.Tags)
+                {
+                    op.Tags.Add(new AsyncApiTag { Name = tagName });
+
+                    document.Components.Tags ??= new Dictionary<string, AsyncApiTag>();
+                    if (!document.Components.Tags.ContainsKey(tagName))
+                    {
+                        document.Components.Tags[tagName] = new AsyncApiTag { Name = tagName };
+                    }
+                }
+            }
+
+            if (messageKeys.Count > 0)
+            {
+                op.Messages ??= new List<AsyncApiMessageReference>();
+                foreach (var msgKey in messageKeys)
+                {
+                    op.Messages.Add(new AsyncApiMessageReference(msgKey));
+                }
+            }
+
+            document.Operations[opId] = op;
+        }
+    }
+
+    private static string ToCamelCase(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+        return char.ToLowerInvariant(value[0]) + value.Substring(1);
+    }
+
+    private IEnumerable<Assembly> GetCandidateAssembliesForAttributeScan()
+    {
+        var partAssemblies = applicationPartManager.ApplicationParts
+            .Select(p => p.GetType().Assembly)
+            .Distinct();
+
+        var entry = Assembly.GetEntryAssembly();
+
+        return partAssemblies
+            .Concat(entry is not null ? new[] { entry } : Array.Empty<Assembly>())
+            .Distinct();
+    }
+
+    private static IEnumerable<Type> SafeGetTypes(Assembly asm)
+    {
+        try { return asm.GetTypes(); }
+        catch (ReflectionTypeLoadException ex) { return ex.Types.Where(t => t is not null)!; }
+    }
+
+    private static bool TryGet(object target, string propertyName, out object? value)
+    {
+        var prop = target.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        if (prop is null || !prop.CanRead)
+        {
+            value = null;
+            return false;
+        }
+        value = prop.GetValue(target);
+        return true;
+    }
+
+    internal void InitializeTransformers(
+        IServiceProvider scopedServiceProvider,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiOperationTransformer[] operationTransformers)
+    {
+        for (var i = 0; i < _options.SchemaTransformers.Count; i++)
+        {
+            var schemaTransformer = _options.SchemaTransformers[i];
+            schemaTransformers[i] = schemaTransformer is TypeBasedAsyncApiSchemaTransformer typeBasedTransformer
+                ? typeBasedTransformer.InitializeTransformer(scopedServiceProvider)
+                : schemaTransformer;
+        }
+
+        for (var i = 0; i < _options.OperationTransformers.Count; i++)
+        {
+            var operationTransformer = _options.OperationTransformers[i];
+            operationTransformers[i] = operationTransformer is TypeBasedAsyncApiOperationTransformer typeBasedTransformer
+                ? typeBasedTransformer.InitializeTransformer(scopedServiceProvider)
+                : operationTransformer;
+        }
+    }
+
+    internal static async Task FinalizeTransformers(
+        IAsyncApiSchemaTransformer[] schemaTransformers,
+        IAsyncApiOperationTransformer[] operationTransformers)
+    {
+        for (var i = 0; i < schemaTransformers.Length; i++)
+            await schemaTransformers[i].FinalizeTransformer();
+
+        for (var i = 0; i < operationTransformers.Length; i++)
+            await operationTransformers[i].FinalizeTransformer();
+    }
+
+    internal AsyncApiInfo GetAsyncApiInfo()
+    {
+        var info = new AsyncApiInfo
+        {
+            Title = $"{hostEnvironment.ApplicationName} | {documentName}",
+            Version = AsyncApiGeneratorConstants.DefaultAsyncApiVersion
+        };
+
+        // Apply configured info from options if available
+        if (_options.Info is not null)
+        {
+            info.Title = _options.Info.Title ?? info.Title;
+            info.Version = _options.Info.Version ?? info.Version;
+            info.Description = _options.Info.Description;
+            info.License = _options.Info.License;
+            info.Contact = _options.Info.Contact;
+        }
+
+        return info;
+    }
+    private void ApplyBindingsFromOptions(AsyncApiDocument document)
+    {
+        document.Components ??= new AsyncApiComponents();
+
+        // Store bindings in components
+        if (_options.OperationBindings.Count > 0)
+        {document.Components.OperationBindings ??= new Dictionary<string, AsyncApiBindings<IOperationBinding>>();
+            foreach (var kvp in _options.OperationBindings)
+            {
+                if (kvp.Value.Count > 0)
+                {
+                    document.Components.OperationBindings[kvp.Key] = new AsyncApiBindings<IOperationBinding>
+                    {
+                        kvp.Value[0]
+                    };
+                }
+            }
+        }
+
+        if (_options.ChannelBindings.Count > 0)
+        {
+            document.Components.ChannelBindings ??= new Dictionary<string, AsyncApiBindings<IChannelBinding>>();
+            foreach (var kvp in _options.ChannelBindings)
+            {
+                if (kvp.Value.Count > 0)
+                {
+                    document.Components.ChannelBindings[kvp.Key] = new AsyncApiBindings<IChannelBinding>
+                    {
+                        kvp.Value[0]
+                    };
+                }
+            }
+        }
+    }
+    internal Dictionary<string, AsyncApiServer> GetAsyncApiServers(HttpRequest? httpRequest = null)
+    {
+        var servers = new Dictionary<string, AsyncApiServer>();
+
+        // Use configured servers from options if available
+        if (_options.Servers.Count > 0)
+        {
+            return new Dictionary<string, AsyncApiServer>(_options.Servers);
+        }
+
+        // Fall back to HTTP request if provided
+        if (httpRequest is not null)
+        {
+            var scheme = httpRequest.Scheme;
+            var serverUrl = UriHelper.BuildAbsolute(scheme, httpRequest.Host, httpRequest.PathBase);
+            if (serverUrl.EndsWith('/') && !httpRequest.PathBase.HasValue)
+                serverUrl = serverUrl.TrimEnd('/');
+
+            servers["default"] = new AsyncApiServer
+            {
+                Host = serverUrl,
+                Protocol = MapProtocolFromScheme(scheme)
+            };
+            return servers;
+        }
+
+        // Last resort: development servers
+        return GetDevelopmentAsyncApiServers();
+    }
+
+    private static string MapProtocolFromScheme(string scheme)
+    {
+        return scheme.ToLowerInvariant() switch
+        {
+            "http" => "http",
+            "https" => "https",
+            "ws" => "ws",
+            "wss" => "wss",
+            _ => scheme.ToLowerInvariant()
+        };
+    }
+
+    private Dictionary<string, AsyncApiServer> GetDevelopmentAsyncApiServers()
+    {
+        if (hostEnvironment.IsDevelopment() &&
+            server?.Features.Get<IServerAddressesFeature>()?.Addresses is { Count: > 0 } addresses)
+        {
+            var result = new Dictionary<string, AsyncApiServer>();
+            var index = 0;
+            foreach (var address in addresses)
+                result[$"server{index++}"] = new AsyncApiServer { Host = address };
+            return result;
+        }
+        return new Dictionary<string, AsyncApiServer>();
+    }
+
+    private async Task ApplyTransformersAsync(
+        AsyncApiDocument document,
+        IServiceProvider scopedServiceProvider,
+        IAsyncApiSchemaTransformer[] schemaTransformers,
+        CancellationToken cancellationToken)
+    {
+        var documentTransformerContext = new AsyncApiDocumentTransformerContext
+        {
+            DocumentName = documentName,
+            ApplicationServices = scopedServiceProvider,
+            DescriptionGroups = apiDescriptionGroupCollectionProvider.ApiDescriptionGroups.Items,
+            Document = document,
+            SchemaTransformers = schemaTransformers
+        };
+
+        for (var i = 0; i < _options.DocumentTransformers.Count; i++)
+        {
+            var transformer = _options.DocumentTransformers[i];
+            await transformer.TransformAsync(document, documentTransformerContext, cancellationToken);
+        }
+    }
+}

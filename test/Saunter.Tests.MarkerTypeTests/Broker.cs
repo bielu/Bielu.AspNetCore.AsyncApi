@@ -1,4 +1,4 @@
-﻿using Saunter.AttributeProvider.Attributes;
+﻿using Bielu.AspNetCore.AsyncApi.Attributes;
 
 namespace Saunter.Tests.MarkerTypeTests
 {

@@ -2,31 +2,24 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Bielu.AspNetCore.AsyncApi.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes.Attributes;
 using LEGO.AsyncAPI.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Namotion.Reflection;
-using Saunter.AttributeProvider.Attributes;
 using Saunter.Options;
 using Saunter.Options.Filters;
 using Saunter.SharedKernel.Interfaces;
 
 namespace Saunter.AttributeProvider
 {
-    internal class AttributeDocumentProvider : IAsyncApiDocumentProvider
+    internal class AttributeDocumentProvider(
+        IServiceProvider serviceProvider,
+        IAsyncApiSchemaGenerator schemaGenerator,
+        IAsyncApiChannelUnion channelUnion,
+        IAsyncApiDocumentCloner cloner)
+        : IAsyncApiDocumentProvider
     {
-        private readonly IServiceProvider _serviceProvider;
-        private readonly IAsyncApiSchemaGenerator _schemaGenerator;
-        private readonly IAsyncApiChannelUnion _channelUnion;
-        private readonly IAsyncApiDocumentCloner _cloner;
-
-        public AttributeDocumentProvider(IServiceProvider serviceProvider, IAsyncApiSchemaGenerator schemaGenerator, IAsyncApiChannelUnion channelUnion, IAsyncApiDocumentCloner cloner)
-        {
-            _serviceProvider = serviceProvider;
-            _schemaGenerator = schemaGenerator;
-            _channelUnion = channelUnion;
-            _cloner = cloner;
-        }
-
         public AsyncApiDocument GetDocument(string? documentName, AsyncApiOptions options)
         {
             if (options == null)
@@ -38,7 +31,7 @@ namespace Saunter.AttributeProvider
 
             var apiNamePair = options.NamedApis.FirstOrDefault(c => c.Value.Id == documentName);
 
-            var clone = _cloner.CloneProtype(apiNamePair.Value ?? options.AsyncApi);
+            var clone = cloner.CloneProtype(apiNamePair.Value ?? options.AsyncApi);
 
             if (string.IsNullOrWhiteSpace(clone.DefaultContentType))
             {
@@ -53,7 +46,7 @@ namespace Saunter.AttributeProvider
             {
                 if (!clone.Channels.TryAdd(item.Key, item.Value))
                 {
-                    clone.Channels[item.Key] = _channelUnion.Union(
+                    clone.Channels[item.Key] = channelUnion.Union(
                         clone.Channels[item.Key],
                         item.Value);
                 }
@@ -63,7 +56,7 @@ namespace Saunter.AttributeProvider
 
             foreach (var filterType in options.DocumentFilters)
             {
-                var filter = (IDocumentFilter)_serviceProvider.GetRequiredService(filterType);
+                var filter = (IDocumentFilter)serviceProvider.GetRequiredService(filterType);
                 filter?.Apply(clone, filterContext);
             }
 
@@ -161,7 +154,7 @@ namespace Saunter.AttributeProvider
 
             foreach (var filterType in options.ChannelFilters)
             {
-                var filter = (IChannelFilter)_serviceProvider.GetRequiredService(filterType);
+                var filter = (IChannelFilter)serviceProvider.GetRequiredService(filterType);
                 filter.Apply(channelItem, context);
             }
         }
@@ -332,7 +325,7 @@ namespace Saunter.AttributeProvider
 
             foreach (var filterType in options.OperationFilters)
             {
-                var filter = (IOperationFilter)_serviceProvider.GetRequiredService(filterType);
+                var filter = (IOperationFilter)serviceProvider.GetRequiredService(filterType);
                 filter?.Apply(operation, filterContext);
             }
         }
@@ -457,7 +450,7 @@ namespace Saunter.AttributeProvider
 
         private AsyncApiSchema? GetAsyncApiSchema(AsyncApiComponents components, TypeInfo? payloadType)
         {
-            var generatedSchemas = _schemaGenerator.Generate(payloadType);
+            var generatedSchemas = schemaGenerator.Generate(payloadType);
 
             if (generatedSchemas is null)
             {

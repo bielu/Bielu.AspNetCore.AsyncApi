@@ -1,5 +1,5 @@
 ﻿using System;
-using Saunter.AttributeProvider.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes;
 using Shouldly;
 using Xunit;
 

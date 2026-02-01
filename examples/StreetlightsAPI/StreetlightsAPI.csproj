@@ -16,8 +16,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Saunter2\Saunter2.csproj" />
+    <ProjectReference Include="..\..\src\Bielu.AspNetCore.AsyncApi.Attributes\Bielu.AspNetCore.AsyncApi.Attributes.csproj" />
+    <ProjectReference Include="..\..\src\Bielu.AspNetCore.AsyncApi.UI\Bielu.AspNetCore.AsyncApi.UI.csproj" />
+    <ProjectReference Include="..\..\src\Bielu.AspNetCore.AsyncApi\Bielu.AspNetCore.AsyncApi.csproj" />
     <ProjectReference Include="..\..\src\Saunter\Saunter.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ByteBard.AsyncAPI.NET.Bindings" Version="2.1.2" />
   </ItemGroup>
 
 </Project>

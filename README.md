@@ -259,7 +259,7 @@ What was broken:
 
 * Namespaces have changed:
     * Saunter.AsyncApiSchema.v2 -> LEGO.AsyncAPI.Models
-    * Saunter.Attributes; -> Saunter.AttributeProvider.Attributes
+    * Saunter.Attributes; -> Bielu.AspNetCore.AsyncApi.Attributes
 * Change the name of the data structures, add prefix 'AsyncApi' (example 'class Info' -> 'class AsyncApiInfo')
 * All data structure constructors are now with the parameterless constructor
 

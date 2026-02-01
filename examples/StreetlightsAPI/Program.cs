@@ -1,6 +1,5 @@
 ﻿using System.Linq;
 using Bielu.AspNetCore.AsyncApi.Extensions;
-using Bielu.AspNetCore.AsyncApi.UI;
 using ByteBard.AsyncAPI.Bindings.Http;
 using LEGO.AsyncAPI.Bindings.AMQP;
 using LEGO.AsyncAPI.Models;
@@ -13,7 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Saunter;
-using amqp= ByteBard.AsyncAPI.Bindings.AsyncApiBinding;
+using amqp = ByteBard.AsyncAPI.Bindings.AsyncApiBinding;
+
 namespace StreetlightsAPI
 {
     public class Program
@@ -65,7 +65,12 @@ namespace StreetlightsAPI
                         new ByteBard.AsyncAPI.Bindings.AMQP.AMQPChannelBinding()
                         {
                             Is = ByteBard.AsyncAPI.Bindings.AMQP.ChannelType.Queue,
-                            Exchange = new() { Name = "example-exchange", Vhost = "/development" }
+                            Queue = new ByteBard.AsyncAPI.Bindings.AMQP.Queue() { Name = "example-exchange", Vhost = "/development" }
+                        }).AddChannelBinding("amqpDev2",
+                        new ByteBard.AsyncAPI.Bindings.AMQP.AMQPChannelBinding()
+                        {
+                            Is = ByteBard.AsyncAPI.Bindings.AMQP.ChannelType.RoutingKey,
+                            Exchange = new ByteBard.AsyncAPI.Bindings.AMQP.Exchange() { Name = "example-exchange", Vhost = "/development" }
                         })
                     .AddOperationBinding("postBind",
                         new HttpOperationBinding()
@@ -92,8 +97,7 @@ namespace StreetlightsAPI
                             License =
                                 new AsyncApiLicense()
                                 {
-                                    Name = "Apache 2.0",
-                                    Url = new("https://www.apache.org/licenses/LICENSE-2.0"),
+                                    Name = "Apache 2.0", Url = new("https://www.apache.org/licenses/LICENSE-2.0"),
                                 }
                         },
                     Servers =
@@ -109,8 +113,17 @@ namespace StreetlightsAPI
                             {
                                 new AMQPChannelBinding
                                 {
-                                    Is = ChannelType.Queue,
+                                    Is = ChannelType.RoutingKey,
                                     Exchange =
+                                        new() { Name = "example-exchange", Vhost = "/development" }
+                                }
+                            },
+                            ["amqpDev2"] = new()
+                            {
+                                new AMQPChannelBinding
+                                {
+                                    Is = ChannelType.Queue,
+                                    Queue = 
                                         new() { Name = "example-exchange", Vhost = "/development" }
                                 }
                             }
@@ -118,8 +131,7 @@ namespace StreetlightsAPI
                         OperationBindings =
                         {
                             {
-                                "postBind",
-                                new()
+                                "postBind", new()
                                 {
                                     new LEGO.AsyncAPI.Bindings.Http.HttpOperationBinding
                                     {
@@ -145,20 +157,17 @@ namespace StreetlightsAPI
 
             app.UseRouting();
             app.UseCors(builder => builder.AllowAnyOrigin().AllowAnyMethod());
-        
+
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapAsyncApiDocuments();
                 endpoints.MapAsyncApi();
 
                 endpoints.MapAsyncApiUi();
-
+                endpoints.MapAsyncApiUI("/asyncapiv2");
                 endpoints.MapControllers();
             });
-            app.UseAsyncApiUi(options =>
-            {
-                    options.UiBaseRoute = "/asyncapiv2/";
-            });
+
             // Print the AsyncAPI doc location
             var logger = app.ApplicationServices.GetService<ILoggerFactory>().CreateLogger<Program>();
             var addresses = app.ServerFeatures.Get<IServerAddressesFeature>().Addresses;

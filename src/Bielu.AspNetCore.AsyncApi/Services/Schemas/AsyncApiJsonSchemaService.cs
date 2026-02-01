@@ -232,20 +232,100 @@ internal sealed class AsyncApiJsonSchemaService(
         }
     }
 
-    internal async Task<AsyncApiJsonSchema> GetOrCreateUnresolvedSchemaAsync(AsyncApiDocument? document, Type type, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
+ internal async Task<AsyncApiJsonSchema> GetOrCreateUnresolvedSchemaAsync(AsyncApiDocument? document, Type type, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
+{
+    var schemaAsJsonObject = CreateSchema(type);
+
+    // Convert string type values to numeric enum format and remove null IDs
+    ConvertTypeStringsToEnumValues(schemaAsJsonObject);
+    RemoveNullIds(schemaAsJsonObject);
+
+    if (parameterDescription is not null)
     {
-        var schemaAsJsonObject = CreateSchema(type);
-        if (parameterDescription is not null)
-        {
-            schemaAsJsonObject.ApplyParameterInfo(parameterDescription, _jsonSerializerOptions.GetTypeInfo(type));
-        }
-        // Use _jsonSchemaContext constructed from _jsonSerializerOptions to respect shared config set by end-user,
-        // particularly in the case of maxDepth.
+        schemaAsJsonObject.ApplyParameterInfo(parameterDescription, _jsonSerializerOptions.GetTypeInfo(type));
+    }
+
+    try
+    {
         var deserializedSchema = JsonSerializer.Deserialize(schemaAsJsonObject, _jsonSchemaContext.AsyncApiJsonSchema);
         Debug.Assert(deserializedSchema != null, "The schema should have been deserialized successfully and materialize a non-null value.");
         await ApplySchemaTransformersAsync(document, deserializedSchema, type, scopedServiceProvider, schemaTransformers, parameterDescription, cancellationToken);
         return deserializedSchema;
     }
+    catch (JsonException ex)
+    {
+        var schemaJson = schemaAsJsonObject.ToJsonString();
+        throw new InvalidOperationException(
+            $"Failed to deserialize schema for type '{type.FullName}'. Schema: {schemaJson}", ex);
+    }
+}
+
+private static void ConvertTypeStringsToEnumValues(JsonNode? node)
+{
+    if (node is JsonObject jsonObject)
+    {
+        if (jsonObject.ContainsKey("type") && jsonObject["type"] is JsonValue typeValue)
+        {
+            if (typeValue.GetValueKind() == JsonValueKind.String)
+            {
+                var typeString = typeValue.GetValue<string>()?.ToLowerInvariant();
+                var enumValue = typeString switch
+                {
+                    "string" => 0,
+                    "number" => 1,
+                    "integer" => 2,
+                    "boolean" => 3,
+                    "object" => 4,
+                    "array" => 5,
+                    "null" => 6,
+                    _ => -1
+                };
+                
+                if (enumValue >= 0)
+                {
+                    jsonObject["type"] = enumValue;
+                }
+            }
+        }
+
+        var keys = ((IDictionary<string, JsonNode?>)jsonObject).Keys.ToList();
+        foreach (var key in keys)
+        {
+            ConvertTypeStringsToEnumValues(jsonObject[key]);
+        }
+    }
+    else if (node is JsonArray jsonArray)
+    {
+        for (var i = 0; i < jsonArray.Count; i++)
+        {
+            ConvertTypeStringsToEnumValues(jsonArray[i]);
+        }
+    }
+}
+
+private static void RemoveNullIds(JsonNode? node)
+{
+    if (node is JsonObject jsonObject)
+    {
+        if (jsonObject.ContainsKey(AsyncApiConstants.Id) && jsonObject[AsyncApiConstants.Id]?.GetValueKind() == JsonValueKind.Null)
+        {
+            jsonObject.Remove(AsyncApiConstants.Id);
+        }
+
+        var keys = ((IDictionary<string, JsonNode?>)jsonObject).Keys.ToList();
+        foreach (var key in keys)
+        {
+            RemoveNullIds(jsonObject[key]);
+        }
+    }
+    else if (node is JsonArray jsonArray)
+    {
+        for (var i = 0; i < jsonArray.Count; i++)
+        {
+            RemoveNullIds(jsonArray[i]);
+        }
+    }
+}
 
     internal async Task<IAsyncApiSchema> GetOrCreateSchemaAsync(AsyncApiDocument document, Type type, IServiceProvider scopedServiceProvider, IAsyncApiSchemaTransformer[] schemaTransformers, ApiParameterDescription? parameterDescription = null, CancellationToken cancellationToken = default)
     {
@@ -450,7 +530,50 @@ internal sealed class AsyncApiJsonSchemaService(
     private JsonNode CreateSchema(Type type)
     {
         var schema = JsonSchemaExporter.GetJsonSchemaAsNode(_jsonSerializerOptions, type, _configuration);
+        NormalizeSchemaTypes(schema);
         return ResolveReferences(schema, schema);
+    }
+
+    private static void NormalizeSchemaTypes(JsonNode? node)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            // Handle type arrays by selecting the primary type
+            if (jsonObject.ContainsKey("type") && jsonObject["type"] is JsonArray typeArray)
+            {
+                var types = typeArray
+                    .Select(t => t?.GetValue<string>())
+                    .Where(t => t != null)
+                    .ToList();
+
+                // Prefer non-null type for nullable fields
+                string? primaryType = types.FirstOrDefault(t => t != "null");
+                if (primaryType == null)
+                {
+                    primaryType = types.FirstOrDefault();
+                }
+
+                if (primaryType != null)
+                {
+                    jsonObject["type"] = primaryType;
+                    // Remove pattern if we're keeping the main type
+                    jsonObject.Remove("pattern");
+                }
+            }
+
+            var keys = ((IDictionary<string, JsonNode?>)jsonObject).Keys.ToList();
+            foreach (var key in keys)
+            {
+                NormalizeSchemaTypes(jsonObject[key]);
+            }
+        }
+        else if (node is JsonArray jsonArray)
+        {
+            for (var i = 0; i < jsonArray.Count; i++)
+            {
+                NormalizeSchemaTypes(jsonArray[i]);
+            }
+        }
     }
 
     private static JsonNode ResolveReferences(JsonNode node, JsonNode rootSchema)

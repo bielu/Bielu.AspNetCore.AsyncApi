@@ -1,67 +1,76 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-// See the LICENSE file in the project root for more information.
-
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Options;
-
-namespace Bielu.AspNetCore.AsyncApi.UI;
 
 public static class EndpointRouteBuilderExtensions
 {
-    
-    public static IApplicationBuilder UseAsyncApiUi(this IApplicationBuilder app, Action<AsyncApiMiddlewareOptions>? configureOptions = null)
+    public static IEndpointRouteBuilder MapAsyncApiUI(
+        this IEndpointRouteBuilder endpoints,
+        string path = "/async-api")
     {
-        var middlewareOptions = new AsyncApiMiddlewareOptions();
-        configureOptions?.Invoke(middlewareOptions);
-        app.UseStaticFiles();
-        app.MapAsyncApiUI(middlewareOptions);
-        return app.UseMiddleware<AsyncApiUiMiddleware>(Options.Create(middlewareOptions));
-    }
-    public static IApplicationBuilder MapAsyncApiUI(
-        this IApplicationBuilder app,
-        AsyncApiMiddlewareOptions options)
-    {
-        var basePath = options.UiBaseRoute.TrimEnd('/');
+        var basePath = path.TrimEnd('/');
+        var fileProvider = new EmbeddedFileProvider(
+            typeof(EndpointRouteBuilderExtensions).Assembly,
+            "Bielu.AspNetCore.AsyncApi.UI.assets");
 
-        app.Use(async (context, next) =>
+        // Serve static files (JS, CSS, etc.)
+        endpoints.MapGet($"{basePath}/{{**route}}", HandleStaticFiles)
+            .ExcludeFromDescription();
+
+        // Serve index.html for root path
+        endpoints.MapGet(basePath, HandleAsyncApiUI)
+            .ExcludeFromDescription();
+
+        return endpoints;
+
+        async Task HandleAsyncApiUI(HttpContext context)
         {
-            var path = context.Request.Path.Value ?? string.Empty;
+            context.Response.ContentType = "text/html; charset=utf-8";
+            await context.Response.WriteAsync(await GetHtmlContent(context));
+        }
 
-            // Only handle requests within the AsyncApi UI path
-            if (!path.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
+        async Task<string> GetHtmlContent(HttpContext context)
+        {
+            var fileInfo = fileProvider.GetFileInfo("index.html");
+
+            if (!fileInfo.Exists)
+                throw new FileNotFoundException("index.html not found");
+
+            using var stream = fileInfo.CreateReadStream();
+            using var reader = new StreamReader(stream);
+            var htmlContent = await reader.ReadToEndAsync();
+
+            // Extract document name from route values
+            var documentName = context.Request.RouteValues["document"]?.ToString() ?? "v1";
+            var asyncApiDocumentUrl = $"{context.Request.PathBase}/asyncapi/{documentName}.json";
+    
+            // Replace template variables in HTML
+            htmlContent = htmlContent.Replace("{asyncApiDocumentUrl}", asyncApiDocumentUrl);
+            var scheme = context.Request.Scheme;
+            var host = context.Request.Host;
+            var asyncApiUiUrl = $"{scheme}://{host}{context.Request.PathBase}{basePath}";
+
+            htmlContent = htmlContent.Replace("{asyncApiUiUrl}", asyncApiUiUrl);
+            htmlContent = htmlContent.Replace("{title}",$"{documentName} AsyncAPI Documentation");
+
+            return htmlContent;
+        }
+
+        async Task HandleStaticFiles(HttpContext context, string route)
+        {
+            var fileInfo = fileProvider.GetFileInfo(route);
+
+            if (!fileInfo.Exists || fileInfo.IsDirectory)
             {
-                await next();
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
                 return;
             }
 
-            // Exclude index.html from being served here
-            if (path.EndsWith("index.html", StringComparison.OrdinalIgnoreCase))
-            {
-                await next();
-                return;
-            }
-
-            // Serve static files (JS, CSS, etc.)
-            var fileProvider = new EmbeddedFileProvider(typeof(EndpointRouteBuilderExtensions).Assembly, "Bielu.AspNetCore.AsyncApi.UI.wwwroot");
-            var relativePath = path.Substring(basePath.Length).TrimStart('/');
-            var fileInfo = fileProvider.GetFileInfo(relativePath);
-
-            if (fileInfo.Exists && !fileInfo.IsDirectory)
-            {
-                context.Response.ContentType = GetContentType(relativePath);
-                await using var stream = fileInfo.CreateReadStream();
-                await stream.CopyToAsync(context.Response.Body);
-                return;
-            }
-
-            await next();
-        });
-
-        return app;
+            context.Response.ContentType = GetContentType(route);
+            await using var stream = fileInfo.CreateReadStream();
+            await stream.CopyToAsync(context.Response.Body);
+        }
     }
 
     private static string GetContentType(string path)

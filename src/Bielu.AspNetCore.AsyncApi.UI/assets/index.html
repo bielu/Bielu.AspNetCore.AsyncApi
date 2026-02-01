@@ -2,30 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>{{title}}</title>
+    <title>{title}</title>
     <style>
       body {
         margin: 0;
         font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
       }
     </style>
-    <link rel="stylesheet" type="text/css" href="./styles/default.min.css">
+    <link rel="stylesheet" type="text/css" href="{asyncApiUiUrl}/styles/default.min.css">
   </head>
   <body>
     
     <div id="asyncapi"></div>
 
-    <script src="./scripts/index.js"></script>
+    <script src="{asyncApiUiUrl}/scripts/index.js"></script>
     <script>
       AsyncApiStandalone.render({
         schema: {
-          url: '{{asyncApiDocumentUrl}}',
+          url: '{asyncApiDocumentUrl}',
           options: { method: "GET", mode: "cors" },
         },
         config: {
           show: {
             sidebar: true,
-          }
+          },
         },
       }, document.getElementById('asyncapi'));
     </script>

@@ -26,7 +26,7 @@ using AttrOperationType = Bielu.AspNetCore.AsyncApi.Attributes.Attributes.Operat
 namespace Bielu.AspNetCore.AsyncApi.Services;
 
 internal sealed class AsyncApiDocumentService(
-    [Microsoft.Extensions.DependencyInjection.ServiceKey]
+    [ServiceKey]
     string documentName,
     IApiDescriptionGroupCollectionProvider apiDescriptionGroupCollectionProvider,
     IHostEnvironment hostEnvironment,
@@ -72,9 +72,9 @@ internal sealed class AsyncApiDocumentService(
             Channels = new Dictionary<string, AsyncApiChannel>(StringComparer.Ordinal),
             Operations = new Dictionary<string, AsyncApiOperation>(StringComparer.Ordinal)
         };
+        ApplyBindingsFromOptions(document);
 
         await PopulateFromAttributeProjectAsync(document, scopedServiceProvider, schemaTransformers, cancellationToken);
-        ApplyBindingsFromOptions(document);
 
         try
         {
@@ -140,7 +140,7 @@ internal sealed class AsyncApiDocumentService(
                     var messageRefs = await ApplyChannelMessagesFromAttributesAsync(
                         document, channel, member, scopedServiceProvider, schemaTransformers, cancellationToken);
 
-                    ApplyOperationsFromAttributes(document, channel, member, messageRefs);
+                    await ApplyOperationsFromAttributes(document, channel, member, messageRefs, scopedServiceProvider, schemaTransformers, cancellationToken);
                 }
             }
         }
@@ -148,7 +148,12 @@ internal sealed class AsyncApiDocumentService(
 
     private AsyncApiChannel GetOrCreateChannel(AsyncApiDocument document, ChannelAttribute channelAttr)
     {
-        if (document.Channels.TryGetValue(channelAttr.Name, out var existing))
+        var sanitizedKey = SanitizeChannelKey( channelAttr.Name);
+        if (channelAttr.BindingsRef != null && document.Channels.TryGetValue(channelAttr.BindingsRef, out var existingChannelByRef))
+        {
+            return existingChannelByRef;
+        }
+        if (document.Channels.TryGetValue(sanitizedKey, out var existing))
         {
             existing.Description ??= channelAttr.Description;
             existing.Address ??= channelAttr.Name;
@@ -161,7 +166,7 @@ internal sealed class AsyncApiDocumentService(
             Description = channelAttr.Description ?? string.Empty,
         };
 
-        document.Channels[channelAttr.Name] = created;
+        document.Channels[sanitizedKey] = created;
         return created;
     }
 
@@ -180,21 +185,26 @@ internal sealed class AsyncApiDocumentService(
             }
         }
     }
-
+    private static string SanitizeChannelKey(string channelKey)
+    {
+        return channelKey.Replace("/", string.Empty);
+    }
     private static void ApplyChannelServersFromAttributes(AsyncApiChannel channel, ChannelAttribute channelAttr)
     {
-        if (channelAttr.Servers is null || channelAttr.Servers.Length == 0)
+        if (channelAttr.Servers.Length == 0)
             return;
 
         foreach (var serverKey in channelAttr.Servers.Where(s => !string.IsNullOrWhiteSpace(s)))
         {
+            var sanitizedServerKey = SanitizeChannelKey(serverKey);
+        
             // Avoid duplicates using reflection to check reference ID
             var alreadyExists = channel.Servers.Any(s =>
             {
                 if (TryGet(s, "Reference", out var refObj) && refObj != null)
                 {
                     if (TryGet(refObj, "Id", out var idObj) && idObj is string id)
-                        return string.Equals(id, serverKey, StringComparison.OrdinalIgnoreCase);
+                        return string.Equals(id, sanitizedServerKey, StringComparison.OrdinalIgnoreCase);
                 }
                 return false;
             });
@@ -202,7 +212,8 @@ internal sealed class AsyncApiDocumentService(
             if (alreadyExists)
                 continue;
 
-            channel.Servers.Add(new AsyncApiServerReference(serverKey));
+            // Use proper AsyncAPI 3.0 reference format: #/servers/serverName
+            channel.Servers.Add(new AsyncApiServerReference($"#/servers/{sanitizedServerKey}"));
         }
     }
 
@@ -252,7 +263,7 @@ internal sealed class AsyncApiDocumentService(
                 Title = msgAttr.Title ?? messageKey,
                 Summary = msgAttr.Summary,
                 Description = msgAttr.Description,
-                Payload = new AsyncApiJsonSchemaReference(schemaKey)
+                Payload = new AsyncApiJsonSchemaReference($"#/components/schemas/{schemaKey}")
             };
 
             channel.Messages[messageKey] = message;
@@ -266,63 +277,108 @@ internal sealed class AsyncApiDocumentService(
         return messageKeys;
     }
 
-    private void ApplyOperationsFromAttributes(
-        AsyncApiDocument document,
-        AsyncApiChannel channel,
-        MemberInfo member,
-        List<string> messageKeys)
+    private async Task ApplyOperationsFromAttributes(
+    AsyncApiDocument document,
+    AsyncApiChannel channel,
+    MemberInfo member,
+    List<string> messageKeys,
+    IServiceProvider scopedServiceProvider,
+    IAsyncApiSchemaTransformer[] schemaTransformers,
+    CancellationToken cancellationToken)
+{
+    var opAttrs = member.GetCustomAttributes<OperationAttribute>(inherit: true);
+    foreach (var opAttr in opAttrs)
     {
-        var opAttrs = member.GetCustomAttributes<OperationAttribute>(inherit: true);
-        foreach (var opAttr in opAttrs)
+        var opId = opAttr.OperationId;
+        if (string.IsNullOrWhiteSpace(opId))
         {
-            var opId = opAttr.OperationId;
-            if (string.IsNullOrWhiteSpace(opId))
-            {
-                opId = $"{member.DeclaringType?.Name ?? "Type"}_{member.Name}_{opAttr.OperationType}";
-            }
-
-            if (document.Operations.ContainsKey(opId))
-                continue;
-
-            var op = new AsyncApiOperation
-            {
-                Summary = opAttr.Summary,
-                Description = opAttr.Description,
-            };
-
-            op.Action = opAttr.OperationType == AttrOperationType.Subscribe
-                ? AsyncApiAction.Send
-                : AsyncApiAction.Receive;
-
-            op.Channel = new AsyncApiChannelReference(channel.Address);
-
-            if (opAttr.Tags is { Length: > 0 })
-            {
-                op.Tags ??= new List<AsyncApiTag>();
-                foreach (var tagName in opAttr.Tags)
-                {
-                    op.Tags.Add(new AsyncApiTag { Name = tagName });
-
-                    document.Components.Tags ??= new Dictionary<string, AsyncApiTag>();
-                    if (!document.Components.Tags.ContainsKey(tagName))
-                    {
-                        document.Components.Tags[tagName] = new AsyncApiTag { Name = tagName };
-                    }
-                }
-            }
-
-            if (messageKeys.Count > 0)
-            {
-                op.Messages ??= new List<AsyncApiMessageReference>();
-                foreach (var msgKey in messageKeys)
-                {
-                    op.Messages.Add(new AsyncApiMessageReference(msgKey));
-                }
-            }
-
-            document.Operations[opId] = op;
+            opId = $"{member.DeclaringType?.Name ?? "Type"}_{member.Name}_{opAttr.OperationType}";
         }
+
+        if (document.Operations.ContainsKey(opId))
+            continue;
+
+        // Process MessagePayloadType if present
+        var operationMessageKeys = new List<string>(messageKeys);
+        if (opAttr.MessagePayloadType is not null)
+        {
+            var payloadSchema = await _componentService.GetOrCreateSchemaAsync(
+                document,
+                opAttr.MessagePayloadType,
+                scopedServiceProvider,
+                schemaTransformers,
+                parameterDescription: null,
+                cancellationToken: cancellationToken);
+
+            var schemaKey = ToCamelCase(opAttr.MessagePayloadType.Name);
+            if (!document.Components.Schemas.ContainsKey(schemaKey))
+            {
+                document.Components.Schemas[schemaKey] = new AsyncApiMultiFormatSchema
+                {
+                    Schema = payloadSchema as AsyncApiJsonSchema
+                };
+            }
+
+            var messageKey = ToCamelCase(opAttr.MessagePayloadType.Name);
+            if (!channel.Messages.ContainsKey(messageKey))
+            {
+                var message = new AsyncApiMessage
+                {
+                    Name = messageKey,
+                    Title = messageKey,
+                    Payload = new AsyncApiJsonSchemaReference($"#/components/schemas/{schemaKey}")
+                };
+
+                channel.Messages[messageKey] = message;
+                if (!document.Components.Messages.ContainsKey(messageKey))
+                {
+                    document.Components.Messages[messageKey] = message;
+                }
+            }
+
+            operationMessageKeys.Add(messageKey);
+        }
+
+        var op = new AsyncApiOperation
+        {
+            Summary = opAttr.Summary,
+            Description = opAttr.Description,
+        };
+
+        op.Action = opAttr.OperationType == AttrOperationType.Subscribe
+            ? AsyncApiAction.Send
+            : AsyncApiAction.Receive;
+
+        op.Channel = new AsyncApiChannelReference($"#/channels/{SanitizeChannelKey(channel.Address!)}");
+
+        if (opAttr.Tags is { Length: > 0 })
+        {
+            op.Tags ??= new List<AsyncApiTag>();
+            foreach (var tagName in opAttr.Tags)
+            {
+                op.Tags.Add(new AsyncApiTag { Name = tagName });
+
+                document.Components.Tags ??= new Dictionary<string, AsyncApiTag>();
+                if (!document.Components.Tags.ContainsKey(tagName))
+                {
+                    document.Components.Tags[tagName] = new AsyncApiTag { Name = tagName };
+                }
+            }
+        }
+
+        if (operationMessageKeys.Count > 0)
+        {
+            op.Messages ??= new List<AsyncApiMessageReference>();
+            foreach (var msgKey in operationMessageKeys)
+            {
+                var messageRef = new AsyncApiMessageReference($"#/components/messages/{msgKey}");
+                op.Messages.Add(messageRef);
+            }
+        }
+
+        document.Operations[opId] = op;
     }
+}
 
     private static string ToCamelCase(string value)
     {
@@ -421,15 +477,18 @@ internal sealed class AsyncApiDocumentService(
 
         // Store bindings in components
         if (_options.OperationBindings.Count > 0)
-        {document.Components.OperationBindings ??= new Dictionary<string, AsyncApiBindings<IOperationBinding>>();
+        {
+            document.Components.OperationBindings ??= new Dictionary<string, AsyncApiBindings<IOperationBinding>>();
             foreach (var kvp in _options.OperationBindings)
             {
                 if (kvp.Value.Count > 0)
                 {
-                    document.Components.OperationBindings[kvp.Key] = new AsyncApiBindings<IOperationBinding>
+                    var bindings = new AsyncApiBindings<IOperationBinding>();
+                    foreach (var binding in kvp.Value)
                     {
-                        kvp.Value[0]
-                    };
+                        bindings.Add(binding);
+                    }
+                    document.Components.OperationBindings[kvp.Key] = bindings;
                 }
             }
         }
@@ -441,10 +500,20 @@ internal sealed class AsyncApiDocumentService(
             {
                 if (kvp.Value.Count > 0)
                 {
-                    document.Components.ChannelBindings[kvp.Key] = new AsyncApiBindings<IChannelBinding>
+                    var bindings = new AsyncApiBindings<IChannelBinding>();
+                    foreach (var binding in kvp.Value)
                     {
-                        kvp.Value[0]
-                    };
+                        bindings.Add(binding);
+                    }
+
+                    var key = SanitizeChannelKey(kvp.Key);
+                    document.Components.ChannelBindings[key] = bindings;
+                          
+                    // Apply bindings to the actual channel if it exists
+                    if (document.Channels.TryGetValue(key, out var channel))
+                    {
+                        channel.Bindings = bindings;
+                    }
                 }
             }
         }

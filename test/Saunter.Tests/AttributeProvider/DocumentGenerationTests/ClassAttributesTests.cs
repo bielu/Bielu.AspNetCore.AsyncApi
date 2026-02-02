@@ -2,6 +2,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using Bielu.AspNetCore.AsyncApi.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes.Attributes;
 using Shouldly;
 using Xunit;
 

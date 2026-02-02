@@ -1,5 +1,6 @@
 ﻿using System;
 using Bielu.AspNetCore.AsyncApi.Attributes;
+using Bielu.AspNetCore.AsyncApi.Attributes.Attributes;
 using Shouldly;
 using Xunit;
 

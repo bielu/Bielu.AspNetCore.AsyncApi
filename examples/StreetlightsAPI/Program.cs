@@ -30,7 +30,6 @@ namespace StreetlightsAPI
                 .ConfigureWebHostDefaults(web =>
                 {
                     web.UseStartup<Startup>();
-                    web.UseUrls("http://localhost:5000");
                 });
         }
     }

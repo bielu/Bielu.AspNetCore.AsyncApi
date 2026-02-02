@@ -35,7 +35,7 @@ Install the packages from NuGet:
 # Core package for AsyncAPI document generation
 dotnet add package Bielu.AspNetCore.AsyncApi
 
-# Optional: Attributes package for decorating your classes
+# Optional: Attributes package for annotating your classes
 dotnet add package Bielu.AspNetCore.AsyncApi.Attributes
 
 # Optional: UI package for interactive documentation
@@ -193,7 +193,7 @@ builder.Services.AddAsyncApi(options =>
     options.AddChannelBinding("amqpDev", new AMQPChannelBinding
     {
         Is = ChannelType.Queue,
-        Queue = new Queue { Name = "example-exchange", Vhost = "/development" }
+        Queue = new Queue { Name = "example-queue", Vhost = "/development" }
     });
 });
 

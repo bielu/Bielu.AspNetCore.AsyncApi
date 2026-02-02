@@ -271,13 +271,13 @@ private static void ConvertTypeStringsToEnumValues(JsonNode? node)
                 var typeString = typeValue.GetValue<string>()?.ToLowerInvariant();
                 var enumValue = typeString switch
                 {
-                    "string" => 0,
-                    "number" => 1,
-                    "integer" => 2,
-                    "boolean" => 3,
-                    "object" => 4,
-                    "array" => 5,
-                    "null" => 6,
+                    "string" => (int)SchemaType.String,    // 32
+                    "number" => (int)SchemaType.Number,    // 16
+                    "integer" => (int)SchemaType.Integer,  // 64
+                    "boolean" => (int)SchemaType.Boolean,  // 2
+                    "object" => (int)SchemaType.Object,    // 8
+                    "array" => (int)SchemaType.Array,      // 4
+                    "null" => (int)SchemaType.Null,        // 1
                     _ => -1
                 };
                 

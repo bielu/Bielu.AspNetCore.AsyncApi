@@ -369,9 +369,11 @@ internal sealed class AsyncApiDocumentService(
         if (operationMessageKeys.Count > 0)
         {
             op.Messages ??= new List<AsyncApiMessageReference>();
+            var channelKey = SanitizeChannelKey(channel.Address!);
             foreach (var msgKey in operationMessageKeys)
             {
-                var messageRef = new AsyncApiMessageReference($"#/components/messages/{msgKey}");
+                // AsyncAPI v3 requires messages to be referenced from the channel, not from components
+                var messageRef = new AsyncApiMessageReference($"#/channels/{channelKey}/messages/{msgKey}");
                 op.Messages.Add(messageRef);
             }
         }

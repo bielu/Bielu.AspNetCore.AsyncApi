@@ -193,6 +193,24 @@ dotnet format Saunter.sln
 
 Releases are managed through GitHub Actions and follow semantic versioning.
 
+### Version File
+
+The project version is managed centrally in the `version.props` file in the repository root:
+
+```xml
+<Project>
+    <PropertyGroup>
+        <VersionPrefix>1.0.0</VersionPrefix>
+        <VersionSuffix></VersionSuffix>
+    </PropertyGroup>
+</Project>
+```
+
+- **VersionPrefix**: The base version number (MAJOR.MINOR.PATCH)
+- **VersionSuffix**: Optional suffix for pre-release versions (e.g., `beta`, `rc1`)
+
+To update the version, modify this file before creating a release tag.
+
 ### CI Pipeline
 
 The CI workflow ([.github/workflows/ci.yaml](./.github/workflows/ci.yaml)) runs on:

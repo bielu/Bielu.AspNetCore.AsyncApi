@@ -2,8 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Bielu.AspNetCore.AsyncApi.Buffers;
 using Bielu.AspNetCore.AsyncApi.Services;
 using ByteBard.AsyncAPI;
@@ -97,40 +95,15 @@ public static class AsyncApiEndpointRouteBuilderExtensions
     /// </summary>
     private static async Task SerializeV2WithRequiredProperties(HttpContext context, ByteBard.AsyncAPI.Models.AsyncApiDocument document, bool isYaml)
     {
-        // First serialize to a string using ByteBard
-        using var stringWriter = new StringWriter();
-        AsyncApiWriterBase writer = isYaml
-            ? new AsyncApiYamlWriter(stringWriter, null)
-            : new AsyncApiJsonWriter(stringWriter);
-
-        document.SerializeV2(writer);
-        var serialized = stringWriter.ToString();
-
-        if (!isYaml)
+        string serialized;
+        
+        if (isYaml)
         {
-            // For JSON, parse and ensure 'channels' property exists
-            try
-            {
-                var jsonNode = JsonNode.Parse(serialized);
-                if (jsonNode is JsonObject jsonObj)
-                {
-                    // Ensure 'channels' property exists (required by AsyncAPI 2.x spec)
-                    if (!jsonObj.ContainsKey("channels"))
-                    {
-                        jsonObj["channels"] = new JsonObject();
-                    }
-
-                    // Re-serialize with proper formatting
-                    serialized = jsonObj.ToJsonString(new JsonSerializerOptions 
-                    { 
-                        WriteIndented = false 
-                    });
-                }
-            }
-            catch (JsonException)
-            {
-                // If parsing fails, use the original serialized content
-            }
+            serialized = AsyncApiSerializationHelper.SerializeV2ToYaml(document);
+        }
+        else
+        {
+            serialized = AsyncApiSerializationHelper.SerializeV2ToJson(document);
         }
 
         await context.Response.WriteAsync(serialized, context.RequestAborted);

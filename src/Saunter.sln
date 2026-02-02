@@ -7,9 +7,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{28D4C365-FDE
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{6ABD4842-47AF-49A5-B057-0EBA64416789}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StreetlightsAPI", "examples\StreetlightsAPI\StreetlightsAPI.csproj", "{F188D4A7-BBCB-464F-A370-2BD84D18EA79}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StreetlightsAPI", ".\examples\StreetlightsAPI\StreetlightsAPI.csproj", "{F188D4A7-BBCB-464F-A370-2BD84D18EA79}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{E0D34C77-924E-4F6B-9289-5A2F07D125A8}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "..\docs", "{E0D34C77-924E-4F6B-9289-5A2F07D125A8}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
 		CHANGELOG.md = CHANGELOG.md
@@ -17,11 +17,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{E0D34C77-9
 		CONTRIBUTING.md = CONTRIBUTING.md
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi", "src\Bielu.AspNetCore.AsyncApi\Bielu.AspNetCore.AsyncApi.csproj", "{5254CC88-99A7-4645-812F-73FAF09E2507}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi", ".\Bielu.AspNetCore.AsyncApi\Bielu.AspNetCore.AsyncApi.csproj", "{5254CC88-99A7-4645-812F-73FAF09E2507}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi.Attributes", "src\Bielu.AspNetCore.AsyncApi.Attributes\Bielu.AspNetCore.AsyncApi.Attributes.csproj", "{AB49B58F-482D-43D5-B041-38CB7840D8FA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi.Attributes", ".\Bielu.AspNetCore.AsyncApi.Attributes\Bielu.AspNetCore.AsyncApi.Attributes.csproj", "{AB49B58F-482D-43D5-B041-38CB7840D8FA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi.UI", "src\Bielu.AspNetCore.AsyncApi.UI\Bielu.AspNetCore.AsyncApi.UI.csproj", "{FAD6C90B-00AC-4BC6-806D-8FD6EF9307F4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi.UI", ".\Bielu.AspNetCore.AsyncApi.UI\Bielu.AspNetCore.AsyncApi.UI.csproj", "{FAD6C90B-00AC-4BC6-806D-8FD6EF9307F4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

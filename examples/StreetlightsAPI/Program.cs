@@ -1,5 +1,6 @@
 ﻿using System.Linq;
 using Bielu.AspNetCore.AsyncApi.Extensions;
+using Bielu.AspNetCore.AsyncApi.UI;
 using ByteBard.AsyncAPI.Bindings.Http;
 
 using Microsoft.AspNetCore.Builder;
@@ -73,7 +74,7 @@ namespace StreetlightsAPI
                             Method = "POST", Type = HttpOperationBinding.HttpOperationType.Response
                         });
             });
-           
+
 
             services.AddScoped<IStreetlightMessageBus, StreetlightMessageBus>();
             services.AddControllers();
@@ -90,7 +91,7 @@ namespace StreetlightsAPI
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapAsyncApi();
-                endpoints.MapAsyncApiUI();
+                endpoints.MapAsyncApiUi();
                 endpoints.MapControllers();
             });
 

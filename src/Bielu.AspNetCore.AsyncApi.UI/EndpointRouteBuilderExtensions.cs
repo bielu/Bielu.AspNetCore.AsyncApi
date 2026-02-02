@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.FileProviders;
 
+namespace Bielu.AspNetCore.AsyncApi.UI;
+
 public static class EndpointRouteBuilderExtensions
 {
-    public static IEndpointRouteBuilder MapAsyncApiUI(
+    public static IEndpointRouteBuilder MapAsyncApiUi(
         this IEndpointRouteBuilder endpoints,
         string path = "/async-api")
     {
@@ -19,12 +21,12 @@ public static class EndpointRouteBuilderExtensions
             .ExcludeFromDescription();
 
         // Serve index.html for root path
-        endpoints.MapGet(basePath, HandleAsyncApiUI)
+        endpoints.MapGet(basePath, HandleAsyncApiUi)
             .ExcludeFromDescription();
 
         return endpoints;
 
-        async Task HandleAsyncApiUI(HttpContext context)
+        async Task HandleAsyncApiUi(HttpContext context)
         {
             context.Response.ContentType = "text/html; charset=utf-8";
             await context.Response.WriteAsync(await GetHtmlContent(context));
@@ -44,7 +46,7 @@ public static class EndpointRouteBuilderExtensions
             // Extract document name from route values
             var documentName = context.Request.RouteValues["document"]?.ToString() ?? "v1";
             var asyncApiDocumentUrl = $"{context.Request.PathBase}/asyncapi/{documentName}.json";
-    
+
             // Replace template variables in HTML
             htmlContent = htmlContent.Replace("{asyncApiDocumentUrl}", asyncApiDocumentUrl);
             var scheme = context.Request.Scheme;
@@ -77,9 +79,9 @@ public static class EndpointRouteBuilderExtensions
     {
         return path switch
         {
-            _ when path.EndsWith(".js") => "application/javascript",
-            _ when path.EndsWith(".css") => "text/css",
-            _ when path.EndsWith(".json") => "application/json",
+            _ when path.EndsWith(".js", StringComparison.InvariantCultureIgnoreCase) => "application/javascript",
+            _ when path.EndsWith(".css", StringComparison.InvariantCultureIgnoreCase) => "text/css",
+            _ when path.EndsWith(".json", StringComparison.InvariantCultureIgnoreCase) => "application/json",
             _ => "application/octet-stream"
         };
     }

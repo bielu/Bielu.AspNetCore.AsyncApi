@@ -14,6 +14,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{E0D34C77-9
 		.editorconfig = .editorconfig
 		CHANGELOG.md = CHANGELOG.md
 		README.md = README.md
+		CONTRIBUTING.md = CONTRIBUTING.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi", "src\Bielu.AspNetCore.AsyncApi\Bielu.AspNetCore.AsyncApi.csproj", "{5254CC88-99A7-4645-812F-73FAF09E2507}"

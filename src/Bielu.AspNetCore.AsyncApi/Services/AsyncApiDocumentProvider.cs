@@ -50,17 +50,18 @@ internal sealed class AsyncApiDocumentProvider(IServiceProvider serviceProvider)
         var targetDocumentService = serviceProvider.GetRequiredKeyedService<AsyncApiDocumentService>(lowercasedDocumentName);
         using var scopedService = serviceProvider.CreateScope();
         var document = await targetDocumentService.GetAsyncApiDocumentAsync(scopedService.ServiceProvider);
-        var jsonWriter = new AsyncApiJsonWriter(writer);
-        switch (AsyncApiSpecVersion)
+
+        // For V2, use the helper to ensure required properties are present
+        // The AsyncAPI 2.x specification requires 'channels' to be present (can be empty object)
+        if (AsyncApiSpecVersion == AsyncApiVersion.AsyncApi2_0)
         {
-            case AsyncApiVersion.AsyncApi2_0:
-                document.SerializeV2(jsonWriter);
-                break;
-            
-                
-            case AsyncApiVersion.AsyncApi3_0:
-                document.SerializeV3(jsonWriter);
-                break;
+            var serialized = AsyncApiSerializationHelper.SerializeV2ToJson(document);
+            await writer.WriteAsync(serialized);
+        }
+        else
+        {
+            var jsonWriter = new AsyncApiJsonWriter(writer);
+            document.SerializeV3(jsonWriter);
         }
     }
 

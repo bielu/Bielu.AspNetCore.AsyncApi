@@ -5,8 +5,8 @@ namespace Bielu.AspNetCore.AsyncApi.Services;
 
 public static class AsyncApiGeneratorConstants
 {
-    internal const string DefaultDocumentName = "v1";
-    internal const string DefaultAsyncApiVersion = "1.0.0";
+    public const string DefaultDocumentName = "v1";
+    public const string DefaultAsyncApiVersion = "1.0.0";
     public const string DefaultAsyncApiRoute = "/asyncapi/{documentName}.json";
     internal const string DescriptionId = "x-aspnetcore-id";
     internal const string SchemaId = "x-schema-id";

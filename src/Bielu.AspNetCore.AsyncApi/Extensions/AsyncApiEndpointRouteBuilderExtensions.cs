@@ -57,23 +57,8 @@ public static class AsyncApiEndpointRouteBuilderExtensions
                     var document = await documentService.GetAsyncApiDocumentAsync(context.RequestServices, context.Request, context.RequestAborted);
                     var documentOptions = options.Get(lowercasedDocumentName);
 
-                    using var textWriter = new Utf8BufferTextWriter(System.Globalization.CultureInfo.InvariantCulture);
-                    textWriter.SetWriter(context.Response.BodyWriter);
-
-                    string contentType;
-                    AsyncApiWriterBase AsyncApiWriter;
-
-                    if (UseYaml(pattern))
-                    {
-                        contentType = "text/plain+yaml;charset=utf-8";
-                        AsyncApiWriter = new AsyncApiYamlWriter(textWriter,null );
-                    }
-                    else
-                    {
-                        contentType = "application/json;charset=utf-8";
-                        AsyncApiWriter = new AsyncApiJsonWriter(textWriter);
-                    }
-
+                    var isYaml = UseYaml(pattern);
+                    string contentType = isYaml ? "text/plain+yaml;charset=utf-8" : "application/json;charset=utf-8";
                     context.Response.ContentType = contentType;
 
                     await context.Response.StartAsync();
@@ -81,19 +66,47 @@ public static class AsyncApiEndpointRouteBuilderExtensions
                     {
                         return;
                     }
-                    switch ( documentOptions.AsyncApiVersion)
+
+                    // For V2, we need to ensure required properties are present in the output
+                    // The AsyncAPI 2.x specification requires 'channels' to be present (can be empty object)
+                    if (documentOptions.AsyncApiVersion == AsyncApiVersion.AsyncApi2_0)
                     {
-                        case AsyncApiVersion.AsyncApi2_0:
-                            document.SerializeV2(AsyncApiWriter);
-                            break;
-                        case AsyncApiVersion.AsyncApi3_0:
-                            document.SerializeV3(AsyncApiWriter);
-                            break;
+                        await SerializeV2WithRequiredProperties(context, document, isYaml);
                     }
-               
-                    await context.Response.BodyWriter.FlushAsync(context.RequestAborted);
+                    else
+                    {
+                        using var textWriter = new Utf8BufferTextWriter(System.Globalization.CultureInfo.InvariantCulture);
+                        textWriter.SetWriter(context.Response.BodyWriter);
+
+                        AsyncApiWriterBase asyncApiWriter = isYaml
+                            ? new AsyncApiYamlWriter(textWriter, null)
+                            : new AsyncApiJsonWriter(textWriter);
+
+                        document.SerializeV3(asyncApiWriter);
+                        await context.Response.BodyWriter.FlushAsync(context.RequestAborted);
+                    }
                 }
             }).ExcludeFromDescription();
+    }
+
+    /// <summary>
+    /// Serializes an AsyncAPI V2 document ensuring required properties are present.
+    /// AsyncAPI 2.x specification requires 'channels' to be present (can be an empty object).
+    /// </summary>
+    private static async Task SerializeV2WithRequiredProperties(HttpContext context, ByteBard.AsyncAPI.Models.AsyncApiDocument document, bool isYaml)
+    {
+        string serialized;
+        
+        if (isYaml)
+        {
+            serialized = AsyncApiSerializationHelper.SerializeV2ToYaml(document);
+        }
+        else
+        {
+            serialized = AsyncApiSerializationHelper.SerializeV2ToJson(document);
+        }
+
+        await context.Response.WriteAsync(serialized, context.RequestAborted);
     }
 
     private static bool UseYaml(string pattern) =>

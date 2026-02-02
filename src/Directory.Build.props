@@ -11,6 +11,14 @@
     <PropertyGroup>
         <Authors>Arkadiusz Biel</Authors>
         <PackageOutputPath>$(MSBuildProjectDirectory)/../../dist</PackageOutputPath>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <RepositoryUrl>https://github.com/bielu/Bielu.AspNetCore.AsyncApi</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageProjectUrl>https://github.com/bielu/Bielu.AspNetCore.AsyncApi</PackageProjectUrl>
     </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="/" />
+    </ItemGroup>
 
 </Project>

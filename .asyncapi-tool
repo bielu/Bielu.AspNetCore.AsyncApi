@@ -1,0 +1,13 @@
+title: Bielu.AspNetCore.AsyncApi
+description: A library that provides built-in support for generating AsyncAPI documents from minimal or controller-based APIs in ASP.NET Core, bringing the same developer experience as Microsoft.AspNetCore.OpenApi but for AsyncAPI specifications.
+links:
+  repoUrl: https://github.com/bielu/Bielu.AspNetCore.AsyncApi
+filters:
+  language: csharp
+  technology:
+    - ASP.NET Core
+    - .NET
+  categories:
+    - code-first
+    - documentation-generator
+  hasCommercial: false

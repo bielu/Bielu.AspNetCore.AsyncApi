@@ -1,0 +1,24 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/examples/">
+    <Project Path="./examples/StreetlightsAPI/StreetlightsAPI.csproj" />
+  </Folder>
+  <Folder Name="/Solution Files/">
+    <File Path="../.dockerignore" />
+    <File Path="../.editorconfig" />
+    <File Path="../.gitignore" />
+    <File Path="../CHANGELOG.md" />
+    <File Path="../CODEOWNERS" />
+    <File Path="../CONTRIBUTING.md" />
+    <File Path="../LICENSE" />
+    <File Path="../README.md" />
+    <File Path="../version.props" />
+  </Folder>
+  <Project Path="./Bielu.AspNetCore.AsyncApi.Attributes/Bielu.AspNetCore.AsyncApi.Attributes.csproj" />
+  <Project Path="./Bielu.AspNetCore.AsyncApi.UI/Bielu.AspNetCore.AsyncApi.UI.csproj" />
+  <Project Path="./Bielu.AspNetCore.AsyncApi/Bielu.AspNetCore.AsyncApi.csproj" />
+</Solution>

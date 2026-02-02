@@ -331,7 +331,7 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
     /// Tests that documents with multiple servers render without errors in the UI.
     /// NOTE: This test is skipped due to a known issue with @asyncapi/react-component v3.0.0.
     /// </summary>
-    [Fact(Skip = "@asyncapi/react-component v3.0.0 has parsing issues - see class documentation for details")]
+    [Fact]
     public async Task AsyncApiUi_DocumentWithServersRendersWithoutErrors()
     {
         // Arrange
@@ -383,7 +383,7 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
     /// "This is not an AsyncAPI document. The asyncapi field as string is missing."
     /// The document itself is valid (passes ByteBard validation in AsyncApiSchemaValidationTests).
     /// </summary>
-    [Fact(Skip = "@asyncapi/react-component v3.0.0 has parsing issues - see class documentation for details")]
+    [Fact]
     public async Task AsyncApiUi_V3DocumentRendersWithoutErrors()
     {
         // Arrange
@@ -460,7 +460,7 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
     /// 2. Migrate documents to AsyncAPI 3.0.0 format
     /// 3. Wait for backward compatibility to be added to @asyncapi/react-component v3.x
     /// </summary>
-    [Fact(Skip = "AsyncAPI 2.x documents are not fully supported by @asyncapi/react-component v3.0.0 - see test comments for details")]
+    [Fact]
     public async Task AsyncApiUi_V2DocumentRendersWithoutErrors()
     {
         // Arrange
@@ -563,7 +563,7 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
     /// Tests that the AsyncAPI React component renders content.
     /// NOTE: This test is skipped due to a known issue with @asyncapi/react-component v3.0.0.
     /// </summary>
-    [Fact(Skip = "@asyncapi/react-component v3.0.0 has parsing issues - see class documentation for details")]
+    [Fact]
     public async Task AsyncApiUi_ComponentRendersContent()
     {
         // Arrange
@@ -608,7 +608,7 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
     /// NOTE: This test is skipped due to a known issue with @asyncapi/react-component v3.0.0
     /// that causes it to fail parsing documents. The document itself is valid.
     /// </summary>
-    [Fact(Skip = "@asyncapi/react-component v3.0.0 has parsing issues - see class documentation for details")]
+    [Fact]
     public async Task AsyncApiUi_NoSchemaErrorsInRenderedContent()
     {
         // Arrange - This test specifically validates the UI doesn't show schema errors

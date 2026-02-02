@@ -56,8 +56,6 @@ internal sealed class AsyncApiDocumentProvider(IServiceProvider serviceProvider)
             case AsyncApiVersion.AsyncApi2_0:
                 document.SerializeV2(jsonWriter);
                 break;
-            
-                
             case AsyncApiVersion.AsyncApi3_0:
                 document.SerializeV3(jsonWriter);
                 break;

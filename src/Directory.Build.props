@@ -1,0 +1,16 @@
+<Project>
+
+    <Import Project="../version.props"/>
+
+    <PropertyGroup>
+      <Title>$(MSBuildProjectName)</Title>
+      <AssemblyName>$(MSBuildProjectName)</AssemblyName>
+      <AssemblyVersion>$(Version)</AssemblyVersion>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <Authors>Arkadiusz Biel</Authors>
+        <PackageOutputPath>$(MSBuildProjectDirectory)/../../dist</PackageOutputPath>
+    </PropertyGroup>
+
+</Project>

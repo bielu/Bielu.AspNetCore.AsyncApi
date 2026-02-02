@@ -1,18 +1,14 @@
 ﻿using System.Linq;
 using Bielu.AspNetCore.AsyncApi.Extensions;
 using ByteBard.AsyncAPI.Bindings.Http;
-using LEGO.AsyncAPI.Bindings.AMQP;
-using LEGO.AsyncAPI.Models;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Saunter;
-using amqp = ByteBard.AsyncAPI.Bindings.AsyncApiBinding;
 
 namespace StreetlightsAPI
 {
@@ -77,73 +73,7 @@ namespace StreetlightsAPI
                             Method = "POST", Type = HttpOperationBinding.HttpOperationType.Response
                         });
             });
-            // Add Saunter to the application services. 
-            services.AddAsyncApiSchemaGeneration(options =>
-            {
-                options.AssemblyMarkerTypes = new[] { typeof(StreetlightMessageBus) };
-
-                options.Middleware.UiTitle = "Streetlights API";
-
-                options.AsyncApi = new AsyncApiDocument
-                {
-                    Info =
-                        new AsyncApiInfo()
-                        {
-                            Title = "Streetlights API",
-                            Version = "1.0.0",
-                            Description =
-                                "The Smartylighting Streetlights API allows you to remotely manage the city lights.",
-                            License =
-                                new AsyncApiLicense()
-                                {
-                                    Name = "Apache 2.0", Url = new("https://www.apache.org/licenses/LICENSE-2.0"),
-                                }
-                        },
-                    Servers =
-                    {
-                        ["mosquitto"] = new AsyncApiServer() { Url = "test.mosquitto.org", Protocol = "mqtt" },
-                        ["webapi"] = new AsyncApiServer() { Url = "localhost:5000", Protocol = "http" },
-                    },
-                    Components = new()
-                    {
-                        ChannelBindings =
-                        {
-                            ["amqpDev"] = new()
-                            {
-                                new AMQPChannelBinding
-                                {
-                                    Is = ChannelType.RoutingKey,
-                                    Exchange =
-                                        new() { Name = "example-exchange", Vhost = "/development" }
-                                }
-                            },
-                            ["amqpDev2"] = new()
-                            {
-                                new AMQPChannelBinding
-                                {
-                                    Is = ChannelType.Queue,
-                                    Queue = 
-                                        new() { Name = "example-exchange", Vhost = "/development" }
-                                }
-                            }
-                        },
-                        OperationBindings =
-                        {
-                            {
-                                "postBind", new()
-                                {
-                                    new LEGO.AsyncAPI.Bindings.Http.HttpOperationBinding
-                                    {
-                                        Method = "POST",
-                                        Type = LEGO.AsyncAPI.Bindings.Http.HttpOperationBinding
-                                            .HttpOperationType.Response,
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-            });
+           
 
             services.AddScoped<IStreetlightMessageBus, StreetlightMessageBus>();
             services.AddControllers();
@@ -159,11 +89,8 @@ namespace StreetlightsAPI
 
             app.UseEndpoints(endpoints =>
             {
-                endpoints.MapAsyncApiDocuments();
                 endpoints.MapAsyncApi();
-
-                endpoints.MapAsyncApiUi();
-                endpoints.MapAsyncApiUI("/asyncapiv2");
+                endpoints.MapAsyncApiUI();
                 endpoints.MapControllers();
             });
 

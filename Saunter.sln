@@ -5,12 +5,6 @@ VisualStudioVersion = 17.0.31919.166
 MinimumVisualStudioVersion = 15.0.26124.0
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{28D4C365-FDED-49AE-A97D-36202E24A55A}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Saunter", "src\Saunter\Saunter.csproj", "{240F263C-4F9B-40E0-8392-1FDB324153F6}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{6491E321-2D02-44AB-9116-D722FE169595}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Saunter.Tests", "test\Saunter.Tests\Saunter.Tests.csproj", "{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{6ABD4842-47AF-49A5-B057-0EBA64416789}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StreetlightsAPI", "examples\StreetlightsAPI\StreetlightsAPI.csproj", "{F188D4A7-BBCB-464F-A370-2BD84D18EA79}"
@@ -20,26 +14,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{E0D34C77-9
 		.editorconfig = .editorconfig
 		CHANGELOG.md = CHANGELOG.md
 		README.md = README.md
-	EndProjectSection
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Saunter.IntegrationTests.ReverseProxy", "test\Saunter.IntegrationTests.ReverseProxy\Saunter.IntegrationTests.ReverseProxy.csproj", "{7CD09B89-130A-41AF-ADAE-2166C4ED695B}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Saunter.Tests.MarkerTypeTests", "test\Saunter.Tests.MarkerTypeTests\Saunter.Tests.MarkerTypeTests.csproj", "{02284473-6DE7-4EE0-8433-2AC295045549}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "actions", "actions", "{D8CB9C0D-9605-457B-979F-C8994B20A926}"
-	ProjectSection(SolutionItems) = preProject
-		.github\workflows\ci.yaml = .github\workflows\ci.yaml
-		.github\workflows\release.yaml = .github\workflows\release.yaml
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dotnet", "dotnet", "{69459F9D-DA73-4E84-8BA7-4CE03E2B7664}"
-	ProjectSection(SolutionItems) = preProject
-		.github\dotnet\action.yaml = .github\dotnet\action.yaml
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "npm", "npm", "{E8FACA22-CFED-4710-89E4-D55F31BF96B3}"
-	ProjectSection(SolutionItems) = preProject
-		.github\npm\action.yaml = .github\npm\action.yaml
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bielu.AspNetCore.AsyncApi", "src\Bielu.AspNetCore.AsyncApi\Bielu.AspNetCore.AsyncApi.csproj", "{5254CC88-99A7-4645-812F-73FAF09E2507}"
@@ -58,30 +32,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Debug|x64.Build.0 = Debug|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Debug|x86.Build.0 = Debug|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Release|Any CPU.Build.0 = Release|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Release|x64.ActiveCfg = Release|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Release|x64.Build.0 = Release|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Release|x86.ActiveCfg = Release|Any CPU
-		{240F263C-4F9B-40E0-8392-1FDB324153F6}.Release|x86.Build.0 = Release|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Debug|x64.Build.0 = Debug|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Debug|x86.Build.0 = Debug|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Release|x64.ActiveCfg = Release|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Release|x64.Build.0 = Release|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Release|x86.ActiveCfg = Release|Any CPU
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB}.Release|x86.Build.0 = Release|Any CPU
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -94,30 +44,6 @@ Global
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79}.Release|x64.Build.0 = Release|Any CPU
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79}.Release|x86.ActiveCfg = Release|Any CPU
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79}.Release|x86.Build.0 = Release|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Debug|x64.Build.0 = Debug|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Debug|x86.Build.0 = Debug|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Release|x64.ActiveCfg = Release|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Release|x64.Build.0 = Release|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Release|x86.ActiveCfg = Release|Any CPU
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B}.Release|x86.Build.0 = Release|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Debug|x64.Build.0 = Debug|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Debug|x86.Build.0 = Debug|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Release|Any CPU.Build.0 = Release|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Release|x64.ActiveCfg = Release|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Release|x64.Build.0 = Release|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Release|x86.ActiveCfg = Release|Any CPU
-		{02284473-6DE7-4EE0-8433-2AC295045549}.Release|x86.Build.0 = Release|Any CPU
 		{5254CC88-99A7-4645-812F-73FAF09E2507}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5254CC88-99A7-4645-812F-73FAF09E2507}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5254CC88-99A7-4645-812F-73FAF09E2507}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -159,13 +85,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{240F263C-4F9B-40E0-8392-1FDB324153F6} = {28D4C365-FDED-49AE-A97D-36202E24A55A}
-		{3ADB27EF-7C80-40EB-AFC6-5D06D415FFAB} = {6491E321-2D02-44AB-9116-D722FE169595}
 		{F188D4A7-BBCB-464F-A370-2BD84D18EA79} = {6ABD4842-47AF-49A5-B057-0EBA64416789}
-		{7CD09B89-130A-41AF-ADAE-2166C4ED695B} = {6491E321-2D02-44AB-9116-D722FE169595}
-		{02284473-6DE7-4EE0-8433-2AC295045549} = {6491E321-2D02-44AB-9116-D722FE169595}
-		{69459F9D-DA73-4E84-8BA7-4CE03E2B7664} = {D8CB9C0D-9605-457B-979F-C8994B20A926}
-		{E8FACA22-CFED-4710-89E4-D55F31BF96B3} = {D8CB9C0D-9605-457B-979F-C8994B20A926}
 		{5254CC88-99A7-4645-812F-73FAF09E2507} = {28D4C365-FDED-49AE-A97D-36202E24A55A}
 		{AB49B58F-482D-43D5-B041-38CB7840D8FA} = {28D4C365-FDED-49AE-A97D-36202E24A55A}
 		{FAD6C90B-00AC-4BC6-806D-8FD6EF9307F4} = {28D4C365-FDED-49AE-A97D-36202E24A55A}

@@ -182,12 +182,16 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
 
         var page = await _browser!.NewPageAsync();
         string? capturedDocumentJson = null;
+        string? capturedContentType = null;
+        int? capturedStatusCode = null;
 
         // Intercept the document fetch to capture exactly what the UI receives
         await page.RouteAsync("**/asyncapi/*.json", async route =>
         {
             var response = await route.FetchAsync();
             capturedDocumentJson = await response.TextAsync();
+            capturedContentType = response.Headers.TryGetValue("content-type", out var ct) ? ct : null;
+            capturedStatusCode = response.Status;
             await route.FulfillAsync(new RouteFulfillOptions
             {
                 Response = response
@@ -206,15 +210,30 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
         // Assert
         capturedDocumentJson.ShouldNotBeNullOrEmpty("UI should fetch the AsyncAPI document");
         
+        // Debug output - show what we captured
+        var debugInfo = $"Status: {capturedStatusCode}, Content-Type: {capturedContentType}, Content length: {capturedDocumentJson?.Length ?? 0}";
+        var contentPreview = capturedDocumentJson?.Length > 500 
+            ? capturedDocumentJson.Substring(0, 500) + "..." 
+            : capturedDocumentJson;
+        
+        // Verify the document starts with JSON (not HTML or other content)
+        var trimmedContent = capturedDocumentJson!.TrimStart();
+        if (!trimmedContent.StartsWith("{"))
+        {
+            Assert.Fail($"Document should be JSON, not HTML or other format.\n{debugInfo}\nContent preview:\n{contentPreview}");
+        }
+        
         // Verify the document is valid JSON with asyncapi field
-        capturedDocumentJson.ShouldContain("\"asyncapi\"", 
-            customMessage: "Document should contain asyncapi field as JSON property");
+        if (!capturedDocumentJson.Contains("\"asyncapi\""))
+        {
+            Assert.Fail($"Document should contain asyncapi field as JSON property.\n{debugInfo}\nContent preview:\n{contentPreview}");
+        }
         
         // Parse and validate with ByteBard
         var reader = new AsyncApiStringReader();
         var document = reader.Read(capturedDocumentJson, out var diagnostic);
         
-        document.ShouldNotBeNull("Document served to UI should be parseable");
+        document.ShouldNotBeNull($"Document served to UI should be parseable.\n{debugInfo}\nContent preview:\n{contentPreview}");
         
         // Log the document content for debugging
         var errorCount = diagnostic?.Errors?.Count() ?? 0;
@@ -452,13 +471,11 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
     /// The asyncapi field as string is missing" indicates the v3 UI component doesn't fully
     /// support v2 document parsing.
     /// 
-    /// Root cause: @asyncapi/react-component v3.0.0 was released to support AsyncAPI 3.0.0 spec,
-    /// and AsyncAPI 2.x documents may not be fully compatible.
+    /// Root cause: AsyncAPI 2.x spec requires a 'channels' property. When no channels are defined
+    /// via [Channel] attributes, the generated document is missing this required property, causing
+    /// the @asyncapi/react-component to fail validation.
     /// 
-    /// Resolution options:
-    /// 1. Use @asyncapi/react-component v2.x for AsyncAPI 2.x documents
-    /// 2. Migrate documents to AsyncAPI 3.0.0 format
-    /// 3. Wait for backward compatibility to be added to @asyncapi/react-component v3.x
+    /// Now fixed - the serialization ensures 'channels: {}' is always present for V2.
     /// </summary>
     [Fact]
     public async Task AsyncApiUi_V2DocumentRendersWithoutErrors()

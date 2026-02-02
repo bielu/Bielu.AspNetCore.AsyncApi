@@ -24,13 +24,42 @@ public class AsyncApiSchemaValidationTests
     private static string GetDocumentRoute(string documentName) => 
         AsyncApiGeneratorConstants.DefaultAsyncApiRoute.Replace("{documentName}", documentName);
 
+    /// <summary>
+    /// Validates that the generated AsyncAPI document contains the correct version string
+    /// based on the configured AsyncApiVersion.
+    /// </summary>
+    private static void ValidateAsyncApiVersion(string jsonContent, AsyncApiVersion expectedVersion)
+    {
+        var jsonDocument = JsonDocument.Parse(jsonContent);
+        var root = jsonDocument.RootElement;
+        
+        root.TryGetProperty("asyncapi", out var versionElement).ShouldBeTrue(
+            "AsyncAPI document should contain 'asyncapi' version field");
+        
+        var versionString = versionElement.GetString();
+        versionString.ShouldNotBeNullOrEmpty("AsyncAPI version should not be empty");
+        
+        switch (expectedVersion)
+        {
+            case AsyncApiVersion.AsyncApi2_0:
+                versionString!.ShouldStartWith("2.");
+                break;
+            case AsyncApiVersion.AsyncApi3_0:
+                versionString!.ShouldStartWith("3.");
+                break;
+            default:
+                throw new ArgumentException($"Unknown AsyncApiVersion: {expectedVersion}");
+        }
+    }
+
     [Fact]
     public async Task GeneratedDocument_CanBeSerializedAndDeserializedAsV3()
     {
         // Arrange
+        var expectedVersion = AsyncApiVersion.AsyncApi3_0;
         using var host = await CreateTestHostAsync(options =>
         {
-            options.AsyncApiVersion = AsyncApiVersion.AsyncApi3_0;
+            options.AsyncApiVersion = expectedVersion;
             options.AddServer("test-server", "localhost", "http");
             options.WithInfo("Schema Validation Test", "1.0.0");
         });
@@ -40,6 +69,9 @@ public class AsyncApiSchemaValidationTests
         // Act
         var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
+
+        // Validate version is correct for V3
+        ValidateAsyncApiVersion(content, expectedVersion);
 
         // Parse with ByteBard reader
         var reader = new AsyncApiStringReader();
@@ -63,9 +95,10 @@ public class AsyncApiSchemaValidationTests
     public async Task GeneratedDocument_CanBeSerializedAndDeserializedAsV2()
     {
         // Arrange
+        var expectedVersion = AsyncApiVersion.AsyncApi2_0;
         using var host = await CreateTestHostAsync(options =>
         {
-            options.AsyncApiVersion = AsyncApiVersion.AsyncApi2_0;
+            options.AsyncApiVersion = expectedVersion;
             options.AddServer("test-server", "localhost", "http");
             options.WithInfo("Schema Validation Test V2", "1.0.0");
         });
@@ -75,6 +108,9 @@ public class AsyncApiSchemaValidationTests
         // Act
         var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
+
+        // Validate version is correct for V2
+        ValidateAsyncApiVersion(content, expectedVersion);
 
         // Parse with ByteBard reader
         var reader = new AsyncApiStringReader();
@@ -96,9 +132,10 @@ public class AsyncApiSchemaValidationTests
     public async Task GeneratedDocument_HasValidAsyncApiVersion()
     {
         // Arrange
+        var expectedVersion = AsyncApiVersion.AsyncApi3_0;
         using var host = await CreateTestHostAsync(options =>
         {
-            options.AsyncApiVersion = AsyncApiVersion.AsyncApi3_0;
+            options.AsyncApiVersion = expectedVersion;
         });
 
         var client = host.GetTestClient();
@@ -106,15 +143,47 @@ public class AsyncApiSchemaValidationTests
         // Act
         var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
+        
+        // Validate version using shared helper
+        ValidateAsyncApiVersion(content, expectedVersion);
+        
+        // Additional structural validation
         var jsonDocument = JsonDocument.Parse(content);
-
-        // Assert
         var root = jsonDocument.RootElement;
         root.TryGetProperty("asyncapi", out var version).ShouldBeTrue();
         var versionString = version.GetString();
         versionString.ShouldNotBeNullOrEmpty();
-        // AsyncAPI 3.0 should have version starting with "3."
         versionString!.ShouldStartWith("3.");
+    }
+
+    [Fact]
+    public async Task GeneratedDocument_V2HasValidAsyncApiVersion()
+    {
+        // Arrange
+        var expectedVersion = AsyncApiVersion.AsyncApi2_0;
+        using var host = await CreateTestHostAsync(options =>
+        {
+            options.AsyncApiVersion = expectedVersion;
+            options.AddServer("test-server", "localhost", "http");
+            options.WithInfo("V2 Version Test", "1.0.0");
+        });
+
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
+        var content = await response.Content.ReadAsStringAsync();
+        
+        // Validate version using shared helper
+        ValidateAsyncApiVersion(content, expectedVersion);
+        
+        // Additional structural validation
+        var jsonDocument = JsonDocument.Parse(content);
+        var root = jsonDocument.RootElement;
+        root.TryGetProperty("asyncapi", out var version).ShouldBeTrue();
+        var versionString = version.GetString();
+        versionString.ShouldNotBeNullOrEmpty();
+        versionString!.ShouldStartWith("2.");
     }
 
     [Fact]
@@ -241,6 +310,104 @@ public class AsyncApiSchemaValidationTests
             var errors = string.Join(Environment.NewLine, 
                 diagnostic!.Errors.Select(e => $"- {e.Message}"));
             Assert.Fail($"Document has {errorCount} parsing error(s):{Environment.NewLine}{errors}");
+        }
+    }
+
+    [Fact]
+    public async Task GeneratedDocument_V2HasRequiredChannelsProperty()
+    {
+        // Arrange - AsyncAPI 2.x specification requires 'channels' property
+        // See: https://www.asyncapi.com/docs/reference/specification/v2.6.0#A2SObject
+        // 
+        // The serialization now ensures 'channels' is always present (as empty object {})
+        // even when no channels are defined via attributes.
+        var expectedVersion = AsyncApiVersion.AsyncApi2_0;
+        using var host = await CreateTestHostAsync(options =>
+        {
+            options.AsyncApiVersion = expectedVersion;
+            options.AddServer("test-server", "localhost", "http");
+            options.WithInfo("V2 Channels Test", "1.0.0");
+        });
+
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
+        var content = await response.Content.ReadAsStringAsync();
+        
+        // Validate version
+        ValidateAsyncApiVersion(content, expectedVersion);
+
+        // Parse JSON and check for required 'channels' property
+        var jsonDocument = JsonDocument.Parse(content);
+        var root = jsonDocument.RootElement;
+        
+        // AsyncAPI 2.x requires 'channels' - it should now be present
+        var hasChannels = root.TryGetProperty("channels", out var channels);
+        hasChannels.ShouldBeTrue("AsyncAPI 2.x document must have 'channels' property");
+        
+        // Validate with ByteBard reader
+        var reader = new AsyncApiStringReader();
+        var document = reader.Read(content, out var diagnostic);
+        
+        document.ShouldNotBeNull("Document should be parseable by ByteBard.AsyncAPI.NET");
+        
+        // Check for schema validation errors
+        if (diagnostic?.Errors != null && diagnostic.Errors.Any())
+        {
+            var errors = string.Join(Environment.NewLine, diagnostic.Errors.Select(e => $"- {e.Message}"));
+            Assert.Fail($"AsyncAPI 2.x document has validation errors:\n{errors}");
+        }
+    }
+
+    [Fact]
+    public async Task GeneratedDocument_V3HasValidStructure()
+    {
+        // Arrange - AsyncAPI 3.0 specification structure
+        // See: https://www.asyncapi.com/docs/reference/specification/v3.0.0
+        var expectedVersion = AsyncApiVersion.AsyncApi3_0;
+        using var host = await CreateTestHostAsync(options =>
+        {
+            options.AsyncApiVersion = expectedVersion;
+            options.AddServer("test-server", "localhost", "http");
+            options.WithInfo("V3 Structure Test", "1.0.0");
+        });
+
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
+        var content = await response.Content.ReadAsStringAsync();
+        
+        // Output for debugging
+        var prettyJson = JsonSerializer.Serialize(JsonDocument.Parse(content).RootElement, 
+            new JsonSerializerOptions { WriteIndented = true });
+        
+        // Validate version
+        ValidateAsyncApiVersion(content, expectedVersion);
+
+        // Parse JSON and validate V3 structure
+        var jsonDocument = JsonDocument.Parse(content);
+        var root = jsonDocument.RootElement;
+        
+        // AsyncAPI 3.0 required fields: asyncapi, info
+        root.TryGetProperty("asyncapi", out _).ShouldBeTrue("Missing 'asyncapi' field");
+        root.TryGetProperty("info", out var info).ShouldBeTrue("Missing 'info' field");
+        info.TryGetProperty("title", out _).ShouldBeTrue("Missing 'info.title' field");
+        info.TryGetProperty("version", out _).ShouldBeTrue("Missing 'info.version' field");
+        
+        // Validate with ByteBard reader
+        var reader = new AsyncApiStringReader();
+        var document = reader.Read(content, out var diagnostic);
+        
+        document.ShouldNotBeNull();
+        
+        // Log any errors for debugging
+        if (diagnostic?.Errors != null && diagnostic.Errors.Any())
+        {
+            var errors = string.Join(Environment.NewLine, 
+                diagnostic.Errors.Select(e => $"- {e.Message}"));
+            Assert.Fail($"AsyncAPI 3.0 document has validation errors:\n{errors}\n\nGenerated document:\n{prettyJson}");
         }
     }
 

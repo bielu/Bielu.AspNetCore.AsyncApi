@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Bielu.AspNetCore.AsyncApi.Extensions;
 using Bielu.AspNetCore.AsyncApi.Services;
+using ByteBard.AsyncAPI;
 using ByteBard.AsyncAPI.Readers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -20,6 +21,33 @@ public class AsyncApiEndpointTests
 {
     private static string GetDocumentRoute(string documentName) => 
         AsyncApiGeneratorConstants.DefaultAsyncApiRoute.Replace("{documentName}", documentName);
+
+    /// <summary>
+    /// Validates that the generated AsyncAPI document contains the correct version string.
+    /// </summary>
+    private static void ValidateAsyncApiVersion(string jsonContent, AsyncApiVersion expectedVersion)
+    {
+        var jsonDocument = JsonDocument.Parse(jsonContent);
+        var root = jsonDocument.RootElement;
+        
+        root.TryGetProperty("asyncapi", out var versionElement).ShouldBeTrue(
+            "AsyncAPI document should contain 'asyncapi' version field");
+        
+        var versionString = versionElement.GetString();
+        versionString.ShouldNotBeNullOrEmpty("AsyncAPI version should not be empty");
+        
+        switch (expectedVersion)
+        {
+            case AsyncApiVersion.AsyncApi2_0:
+                versionString!.ShouldStartWith("2.");
+                break;
+            case AsyncApiVersion.AsyncApi3_0:
+                versionString!.ShouldStartWith("3.");
+                break;
+            default:
+                throw new ArgumentException($"Unknown AsyncApiVersion: {expectedVersion}");
+        }
+    }
 
     [Fact]
     public async Task MapAsyncApi_DefaultRoute_ReturnsDocument()
@@ -101,21 +129,48 @@ public class AsyncApiEndpointTests
     public async Task MapAsyncApi_DocumentContainsCorrectVersion()
     {
         // Arrange
+        var expectedVersion = AsyncApiVersion.AsyncApi3_0;
         using var host = await CreateTestHostAsync(options =>
         {
-            options.AsyncApiVersion = ByteBard.AsyncAPI.AsyncApiVersion.AsyncApi3_0;
+            options.AsyncApiVersion = expectedVersion;
         });
         var client = host.GetTestClient();
 
         // Act
         var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
-        var jsonDoc = JsonDocument.Parse(content);
 
-        // Assert
+        // Assert - use shared validator
+        ValidateAsyncApiVersion(content, expectedVersion);
+        
+        var jsonDoc = JsonDocument.Parse(content);
         var root = jsonDoc.RootElement;
         root.TryGetProperty("asyncapi", out var version).ShouldBeTrue();
         version.GetString()!.ShouldStartWith("3.");
+    }
+
+    [Fact]
+    public async Task MapAsyncApi_V2DocumentContainsCorrectVersion()
+    {
+        // Arrange
+        var expectedVersion = AsyncApiVersion.AsyncApi2_0;
+        using var host = await CreateTestHostAsync(options =>
+        {
+            options.AsyncApiVersion = expectedVersion;
+        });
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert - use shared validator
+        ValidateAsyncApiVersion(content, expectedVersion);
+        
+        var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+        root.TryGetProperty("asyncapi", out var version).ShouldBeTrue();
+        version.GetString()!.ShouldStartWith("2.");
     }
 
     [Fact]

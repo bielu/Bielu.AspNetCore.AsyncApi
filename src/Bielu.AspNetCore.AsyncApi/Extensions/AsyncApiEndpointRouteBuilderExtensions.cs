@@ -2,6 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Bielu.AspNetCore.AsyncApi.Buffers;
 using Bielu.AspNetCore.AsyncApi.Services;
 using ByteBard.AsyncAPI;
@@ -57,23 +59,8 @@ public static class AsyncApiEndpointRouteBuilderExtensions
                     var document = await documentService.GetAsyncApiDocumentAsync(context.RequestServices, context.Request, context.RequestAborted);
                     var documentOptions = options.Get(lowercasedDocumentName);
 
-                    using var textWriter = new Utf8BufferTextWriter(System.Globalization.CultureInfo.InvariantCulture);
-                    textWriter.SetWriter(context.Response.BodyWriter);
-
-                    string contentType;
-                    AsyncApiWriterBase AsyncApiWriter;
-
-                    if (UseYaml(pattern))
-                    {
-                        contentType = "text/plain+yaml;charset=utf-8";
-                        AsyncApiWriter = new AsyncApiYamlWriter(textWriter,null );
-                    }
-                    else
-                    {
-                        contentType = "application/json;charset=utf-8";
-                        AsyncApiWriter = new AsyncApiJsonWriter(textWriter);
-                    }
-
+                    var isYaml = UseYaml(pattern);
+                    string contentType = isYaml ? "text/plain+yaml;charset=utf-8" : "application/json;charset=utf-8";
                     context.Response.ContentType = contentType;
 
                     await context.Response.StartAsync();
@@ -81,19 +68,72 @@ public static class AsyncApiEndpointRouteBuilderExtensions
                     {
                         return;
                     }
-                    switch ( documentOptions.AsyncApiVersion)
+
+                    // For V2, we need to ensure required properties are present in the output
+                    // The AsyncAPI 2.x specification requires 'channels' to be present (can be empty object)
+                    if (documentOptions.AsyncApiVersion == AsyncApiVersion.AsyncApi2_0)
                     {
-                        case AsyncApiVersion.AsyncApi2_0:
-                            document.SerializeV2(AsyncApiWriter);
-                            break;
-                        case AsyncApiVersion.AsyncApi3_0:
-                            document.SerializeV3(AsyncApiWriter);
-                            break;
+                        await SerializeV2WithRequiredProperties(context, document, isYaml);
                     }
-               
-                    await context.Response.BodyWriter.FlushAsync(context.RequestAborted);
+                    else
+                    {
+                        using var textWriter = new Utf8BufferTextWriter(System.Globalization.CultureInfo.InvariantCulture);
+                        textWriter.SetWriter(context.Response.BodyWriter);
+
+                        AsyncApiWriterBase asyncApiWriter = isYaml
+                            ? new AsyncApiYamlWriter(textWriter, null)
+                            : new AsyncApiJsonWriter(textWriter);
+
+                        document.SerializeV3(asyncApiWriter);
+                        await context.Response.BodyWriter.FlushAsync(context.RequestAborted);
+                    }
                 }
             }).ExcludeFromDescription();
+    }
+
+    /// <summary>
+    /// Serializes an AsyncAPI V2 document ensuring required properties are present.
+    /// AsyncAPI 2.x specification requires 'channels' to be present (can be an empty object).
+    /// </summary>
+    private static async Task SerializeV2WithRequiredProperties(HttpContext context, ByteBard.AsyncAPI.Models.AsyncApiDocument document, bool isYaml)
+    {
+        // First serialize to a string using ByteBard
+        using var stringWriter = new StringWriter();
+        AsyncApiWriterBase writer = isYaml
+            ? new AsyncApiYamlWriter(stringWriter, null)
+            : new AsyncApiJsonWriter(stringWriter);
+
+        document.SerializeV2(writer);
+        var serialized = stringWriter.ToString();
+
+        if (!isYaml)
+        {
+            // For JSON, parse and ensure 'channels' property exists
+            try
+            {
+                var jsonNode = JsonNode.Parse(serialized);
+                if (jsonNode is JsonObject jsonObj)
+                {
+                    // Ensure 'channels' property exists (required by AsyncAPI 2.x spec)
+                    if (!jsonObj.ContainsKey("channels"))
+                    {
+                        jsonObj["channels"] = new JsonObject();
+                    }
+
+                    // Re-serialize with proper formatting
+                    serialized = jsonObj.ToJsonString(new JsonSerializerOptions 
+                    { 
+                        WriteIndented = false 
+                    });
+                }
+            }
+            catch (JsonException)
+            {
+                // If parsing fails, use the original serialized content
+            }
+        }
+
+        await context.Response.WriteAsync(serialized, context.RequestAborted);
     }
 
     private static bool UseYaml(string pattern) =>

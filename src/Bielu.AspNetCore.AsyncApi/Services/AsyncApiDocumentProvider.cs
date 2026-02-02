@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using ByteBard.AsyncAPI;
 using ByteBard.AsyncAPI.Writers;
 using Microsoft.Extensions.DependencyInjection;
@@ -50,16 +52,57 @@ internal sealed class AsyncApiDocumentProvider(IServiceProvider serviceProvider)
         var targetDocumentService = serviceProvider.GetRequiredKeyedService<AsyncApiDocumentService>(lowercasedDocumentName);
         using var scopedService = serviceProvider.CreateScope();
         var document = await targetDocumentService.GetAsyncApiDocumentAsync(scopedService.ServiceProvider);
-        var jsonWriter = new AsyncApiJsonWriter(writer);
-        switch (AsyncApiSpecVersion)
+
+        // For V2, we need to ensure required properties are present in the output
+        // The AsyncAPI 2.x specification requires 'channels' to be present (can be empty object)
+        if (AsyncApiSpecVersion == AsyncApiVersion.AsyncApi2_0)
         {
-            case AsyncApiVersion.AsyncApi2_0:
-                document.SerializeV2(jsonWriter);
-                break;
-            case AsyncApiVersion.AsyncApi3_0:
-                document.SerializeV3(jsonWriter);
-                break;
+            await SerializeV2WithRequiredPropertiesAsync(writer, document);
         }
+        else
+        {
+            var jsonWriter = new AsyncApiJsonWriter(writer);
+            document.SerializeV3(jsonWriter);
+        }
+    }
+
+    /// <summary>
+    /// Serializes an AsyncAPI V2 document ensuring required properties are present.
+    /// AsyncAPI 2.x specification requires 'channels' to be present (can be an empty object).
+    /// </summary>
+    private static async Task SerializeV2WithRequiredPropertiesAsync(TextWriter writer, ByteBard.AsyncAPI.Models.AsyncApiDocument document)
+    {
+        // First serialize to a string using ByteBard
+        using var stringWriter = new StringWriter();
+        var jsonWriter = new AsyncApiJsonWriter(stringWriter);
+        document.SerializeV2(jsonWriter);
+        var serialized = stringWriter.ToString();
+
+        // Parse and ensure 'channels' property exists
+        try
+        {
+            var jsonNode = JsonNode.Parse(serialized);
+            if (jsonNode is JsonObject jsonObj)
+            {
+                // Ensure 'channels' property exists (required by AsyncAPI 2.x spec)
+                if (!jsonObj.ContainsKey("channels"))
+                {
+                    jsonObj["channels"] = new JsonObject();
+                }
+
+                // Re-serialize with proper formatting
+                serialized = jsonObj.ToJsonString(new JsonSerializerOptions 
+                { 
+                    WriteIndented = false 
+                });
+            }
+        }
+        catch (JsonException)
+        {
+            // If parsing fails, use the original serialized content
+        }
+
+        await writer.WriteAsync(serialized);
     }
 
     /// <summary>

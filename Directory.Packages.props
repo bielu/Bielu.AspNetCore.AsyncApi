@@ -28,5 +28,8 @@
     
     <!-- ASP.NET Core testing -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.2" />
+    
+    <!-- Playwright for headless browser testing -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.52.0" />
   </ItemGroup>
 </Project>

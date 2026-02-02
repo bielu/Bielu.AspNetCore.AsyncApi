@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using Bielu.AspNetCore.AsyncApi.Extensions;
 using Bielu.AspNetCore.AsyncApi.Services;
 using Bielu.AspNetCore.AsyncApi.UI;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Playwright;
 using Shouldly;
 using Xunit;
 
@@ -16,11 +18,49 @@ namespace Bielu.AspNetCore.AsyncApi.Tests.Integration;
 /// <summary>
 /// Integration tests for the AsyncAPI UI component.
 /// These tests verify that the UI can load and render the AsyncAPI document without schema errors.
+/// Uses Playwright for headless browser testing to validate JavaScript execution.
 /// </summary>
-public class AsyncApiUiIntegrationTests
+public class AsyncApiUiIntegrationTests : IAsyncLifetime
 {
+    private IPlaywright? _playwright;
+    private IBrowser? _browser;
+    private IHost? _host;
+    private string? _baseUrl;
+
     private static string GetDocumentRoute(string documentName) => 
         AsyncApiGeneratorConstants.DefaultAsyncApiRoute.Replace("{documentName}", documentName);
+
+    public async Task InitializeAsync()
+    {
+        // Install browsers if not installed (needed for CI)
+        var exitCode = Microsoft.Playwright.Program.Main(new[] { "install", "chromium" });
+        if (exitCode != 0)
+        {
+            throw new Exception($"Playwright browser installation failed with exit code {exitCode}");
+        }
+
+        _playwright = await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true
+        });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_host != null)
+        {
+            await _host.StopAsync();
+            _host.Dispose();
+        }
+        
+        if (_browser != null)
+        {
+            await _browser.CloseAsync();
+        }
+        
+        _playwright?.Dispose();
+    }
 
     [Fact]
     public async Task AsyncApiUi_ReturnsHtmlPage()
@@ -91,137 +131,457 @@ public class AsyncApiUiIntegrationTests
     }
 
     [Fact]
-    public async Task AsyncApiUi_DocumentWithServersIsValidForUi()
+    public async Task AsyncApiUi_RendersWithoutJavaScriptErrors()
     {
         // Arrange
-        using var host = await CreateTestHostWithUiAsync(options =>
+        await StartServerAsync();
+        var page = await _browser!.NewPageAsync();
+        var consoleErrors = new List<string>();
+        var pageErrors = new List<string>();
+
+        // Listen for console errors
+        page.Console += (_, msg) =>
+        {
+            if (msg.Type == "error")
+            {
+                consoleErrors.Add(msg.Text);
+            }
+        };
+
+        // Listen for page errors (uncaught exceptions)
+        page.PageError += (_, error) =>
+        {
+            pageErrors.Add(error);
+        };
+
+        // Act - Navigate to the UI page
+        var response = await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        // Wait for the AsyncAPI component to potentially render
+        await page.WaitForTimeoutAsync(2000);
+
+        // Assert
+        response.ShouldNotBeNull();
+        response.Ok.ShouldBeTrue("Page should load successfully");
+
+        // Filter out non-critical errors (e.g., favicon 404)
+        var criticalErrors = consoleErrors
+            .Where(e => !e.Contains("favicon") && !e.Contains("404"))
+            .ToList();
+
+        // Check for schema-related errors specifically
+        var schemaErrors = criticalErrors
+            .Where(e => e.Contains("schema", StringComparison.OrdinalIgnoreCase) ||
+                       e.Contains("AsyncAPI", StringComparison.OrdinalIgnoreCase) ||
+                       e.Contains("validation", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (schemaErrors.Any())
+        {
+            Assert.Fail($"UI encountered schema errors:{Environment.NewLine}{string.Join(Environment.NewLine, schemaErrors)}");
+        }
+
+        // Page errors are more severe (uncaught exceptions)
+        var criticalPageErrors = pageErrors
+            .Where(e => !e.Contains("favicon"))
+            .ToList();
+
+        if (criticalPageErrors.Any())
+        {
+            Assert.Fail($"UI encountered JavaScript errors:{Environment.NewLine}{string.Join(Environment.NewLine, criticalPageErrors)}");
+        }
+
+        await page.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AsyncApiUi_DocumentWithServersRendersWithoutErrors()
+    {
+        // Arrange
+        await StartServerAsync(options =>
         {
             options.AddServer("production", "api.example.com", "https");
             options.AddServer("staging", "staging.example.com", "https");
             options.WithInfo("Multi-Server API", "1.0.0");
             options.WithDescription("API with multiple servers for UI testing");
         });
-        var client = host.GetTestClient();
 
-        // Act
-        var documentResponse = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
-        var documentContent = await documentResponse.Content.ReadAsStringAsync();
-        
-        // Validate
-        var reader = new AsyncApiStringReader();
-        var document = reader.Read(documentContent, out var diagnostic);
-        
-        // Assert
-        document.ShouldNotBeNull();
-        document.Servers.ShouldNotBeNull();
-        document.Servers.Count.ShouldBeGreaterThan(0);
-        
-        // No validation errors
-        var errorCount = diagnostic?.Errors?.Count() ?? 0;
-        errorCount.ShouldBe(0, "Document should have no schema validation errors");
-    }
+        var page = await _browser!.NewPageAsync();
+        var pageErrors = new List<string>();
 
-    [Fact]
-    public async Task AsyncApiUi_DocumentWithInfoIsValidForUi()
-    {
-        // Arrange
-        using var host = await CreateTestHostWithUiAsync(options =>
+        page.PageError += (_, error) =>
         {
-            options.WithInfo("Test API for UI", "2.0.0");
-            options.WithDescription("A comprehensive API description for UI rendering");
-            options.WithLicense("MIT", "https://opensource.org/licenses/MIT");
-        });
-        var client = host.GetTestClient();
+            pageErrors.Add(error);
+        };
 
         // Act
-        var documentResponse = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
-        var documentContent = await documentResponse.Content.ReadAsStringAsync();
-        
-        // Validate
-        var reader = new AsyncApiStringReader();
-        var document = reader.Read(documentContent, out var diagnostic);
-        
+        var response = await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        await page.WaitForTimeoutAsync(2000);
+
         // Assert
-        document.ShouldNotBeNull();
-        document.Info.ShouldNotBeNull();
-        document.Info.Title.ShouldContain("Test API for UI");
-        document.Info.Version.ShouldBe("2.0.0");
+        response.ShouldNotBeNull();
+        response.Ok.ShouldBeTrue();
+
+        var criticalErrors = pageErrors.Where(e => !e.Contains("favicon")).ToList();
+        criticalErrors.ShouldBeEmpty("UI should render multi-server document without errors");
         
-        // No validation errors
-        var errorCount = diagnostic?.Errors?.Count() ?? 0;
-        errorCount.ShouldBe(0, "Document should have no schema validation errors");
+        // Check for schema validation error in rendered content
+        var pageContent = await page.ContentAsync();
+        pageContent.ShouldNotContain("Error: There are errors in your Asyncapi document",
+            Case.Insensitive,
+            "UI should not display AsyncAPI schema validation errors");
+
+        await page.CloseAsync();
     }
 
     [Fact]
-    public async Task AsyncApiUi_StaticFilesAreServed()
+    public async Task AsyncApiUi_V3DocumentRendersWithoutErrors()
     {
         // Arrange
-        using var host = await CreateTestHostWithUiAsync();
-        var client = host.GetTestClient();
-
-        // Act - Try to access static files path
-        var response = await client.GetAsync("/async-api/scripts/index.js");
-
-        // Assert - Should either return the file or 404 if not embedded
-        // The important thing is the endpoint is configured correctly
-        (response.StatusCode == HttpStatusCode.OK || response.StatusCode == HttpStatusCode.NotFound)
-            .ShouldBeTrue("Static files endpoint should be configured");
-    }
-
-    [Fact]
-    public async Task AsyncApiUi_V3DocumentIsValidForUi()
-    {
-        // Arrange
-        using var host = await CreateTestHostWithUiAsync(options =>
+        await StartServerAsync(options =>
         {
             options.AsyncApiVersion = ByteBard.AsyncAPI.AsyncApiVersion.AsyncApi3_0;
             options.AddServer("test-server", "localhost", "http");
             options.WithInfo("AsyncAPI 3.0 Test", "3.0.0");
         });
-        var client = host.GetTestClient();
+
+        var page = await _browser!.NewPageAsync();
+        var pageErrors = new List<string>();
+
+        page.PageError += (_, error) =>
+        {
+            pageErrors.Add(error);
+        };
 
         // Act
-        var documentResponse = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
-        var documentContent = await documentResponse.Content.ReadAsStringAsync();
-        
-        // Validate
-        var reader = new AsyncApiStringReader();
-        var document = reader.Read(documentContent, out var diagnostic);
-        
+        var response = await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        await page.WaitForTimeoutAsync(2000);
+
         // Assert
-        document.ShouldNotBeNull();
+        response.ShouldNotBeNull();
+        response.Ok.ShouldBeTrue();
+
+        var criticalErrors = pageErrors.Where(e => !e.Contains("favicon")).ToList();
+        criticalErrors.ShouldBeEmpty("UI should render AsyncAPI 3.0 document without errors");
         
-        // No validation errors for AsyncAPI 3.0
-        var errorCount = diagnostic?.Errors?.Count() ?? 0;
-        errorCount.ShouldBe(0, "AsyncAPI 3.0 document should have no schema validation errors");
+        // Check for schema validation error in rendered content
+        var pageContent = await page.ContentAsync();
+        pageContent.ShouldNotContain("Error: There are errors in your Asyncapi document",
+            Case.Insensitive,
+            "UI should not display AsyncAPI schema validation errors for v3");
+
+        await page.CloseAsync();
     }
 
     [Fact]
-    public async Task AsyncApiUi_V2DocumentIsValidForUi()
+    public async Task AsyncApiUi_V2DocumentRendersWithoutErrors()
     {
         // Arrange
-        using var host = await CreateTestHostWithUiAsync(options =>
+        await StartServerAsync(options =>
         {
             options.AsyncApiVersion = ByteBard.AsyncAPI.AsyncApiVersion.AsyncApi2_0;
             options.AddServer("test-server", "localhost", "http");
             options.WithInfo("AsyncAPI 2.0 Test", "2.0.0");
         });
-        var client = host.GetTestClient();
+
+        var page = await _browser!.NewPageAsync();
+        var pageErrors = new List<string>();
+
+        page.PageError += (_, error) =>
+        {
+            pageErrors.Add(error);
+        };
 
         // Act
-        var documentResponse = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
-        var documentContent = await documentResponse.Content.ReadAsStringAsync();
-        
-        // Validate
-        var reader = new AsyncApiStringReader();
-        var document = reader.Read(documentContent, out var diagnostic);
-        
+        var response = await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        await page.WaitForTimeoutAsync(2000);
+
         // Assert
-        document.ShouldNotBeNull();
+        response.ShouldNotBeNull();
+        response.Ok.ShouldBeTrue();
+
+        var criticalErrors = pageErrors.Where(e => !e.Contains("favicon")).ToList();
+        criticalErrors.ShouldBeEmpty("UI should render AsyncAPI 2.0 document without errors");
         
-        // No validation errors for AsyncAPI 2.0
-        var errorCount = diagnostic?.Errors?.Count() ?? 0;
-        errorCount.ShouldBe(0, "AsyncAPI 2.0 document should have no schema validation errors");
+        // Check for schema validation error in rendered content
+        var pageContent = await page.ContentAsync();
+        pageContent.ShouldNotContain("Error: There are errors in your Asyncapi document",
+            Case.Insensitive,
+            "UI should not display AsyncAPI schema validation errors for v2");
+
+        await page.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AsyncApiUi_ComponentRendersContent()
+    {
+        // Arrange
+        await StartServerAsync(options =>
+        {
+            options.AddServer("test-server", "localhost", "http");
+            options.WithInfo("Render Test API", "1.0.0");
+            options.WithDescription("API to test UI rendering");
+        });
+
+        var page = await _browser!.NewPageAsync();
+
+        // Act
+        await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        // Wait for potential React rendering
+        await page.WaitForTimeoutAsync(3000);
+
+        // Assert - Check that the asyncapi div has content (React component rendered)
+        var asyncApiDiv = await page.QuerySelectorAsync("#asyncapi");
+        asyncApiDiv.ShouldNotBeNull("AsyncAPI container div should exist");
+
+        var innerHTML = await asyncApiDiv.InnerHTMLAsync();
+        // The div should have some content if the React component rendered
+        innerHTML.ShouldNotBeNullOrEmpty("AsyncAPI React component should render some content");
+        
+        // Check for AsyncAPI schema validation error message from React component
+        // The UI renders "Error: There are errors in your Asyncapi document" when schema is invalid
+        innerHTML.ShouldNotContain("Error: There are errors in your Asyncapi document", 
+            Case.Insensitive, 
+            "AsyncAPI document should not have schema validation errors");
+
+        await page.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AsyncApiUi_NoSchemaErrorsInRenderedContent()
+    {
+        // Arrange - This test specifically validates the UI doesn't show schema errors
+        await StartServerAsync(options =>
+        {
+            options.AsyncApiVersion = ByteBard.AsyncAPI.AsyncApiVersion.AsyncApi3_0;
+            options.AddServer("production", "api.example.com", "https");
+            options.AddServer("staging", "staging.example.com", "https");
+            options.WithInfo("Full API Test", "1.0.0");
+            options.WithDescription("Comprehensive API for schema validation testing");
+            options.WithLicense("MIT", "https://opensource.org/licenses/MIT");
+        });
+
+        var page = await _browser!.NewPageAsync();
+
+        // Act
+        await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        // Wait for React rendering
+        await page.WaitForTimeoutAsync(3000);
+
+        // Assert - Get the full page content and check for error messages
+        var pageContent = await page.ContentAsync();
+        
+        // The AsyncAPI React component shows this specific error when schema validation fails
+        pageContent.ShouldNotContain("Error: There are errors in your Asyncapi document",
+            Case.Insensitive,
+            "UI should not display AsyncAPI schema validation errors");
+        
+        // Also check for any generic error displays
+        pageContent.ShouldNotContain("validation error", Case.Insensitive);
+
+        await page.CloseAsync();
+    }
+
+    /// <summary>
+    /// Test that validates the UI renders documents with operations correctly.
+    /// This test will fail until the ASP.NET async bindings are properly updated.
+    /// Uses HTTP operation bindings similar to StreetlightsAPI example.
+    /// </summary>
+    [Fact]
+    public async Task AsyncApiUi_DocumentWithOperationsRendersWithoutErrors()
+    {
+        // Arrange - Use HTTP operation bindings similar to StreetlightsAPI example
+        await StartServerWithOperationsAsync();
+
+        var page = await _browser!.NewPageAsync();
+        var pageErrors = new List<string>();
+
+        page.PageError += (_, error) =>
+        {
+            pageErrors.Add(error);
+        };
+
+        // Act
+        var response = await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        // Wait for React rendering
+        await page.WaitForTimeoutAsync(3000);
+
+        // Assert
+        response.ShouldNotBeNull();
+        response.Ok.ShouldBeTrue();
+
+        var criticalErrors = pageErrors.Where(e => !e.Contains("favicon")).ToList();
+        
+        // Get page content to check for schema errors
+        var pageContent = await page.ContentAsync();
+        
+        // The AsyncAPI React component shows this specific error when schema validation fails
+        // This test will fail until the ASP.NET async bindings are properly updated
+        pageContent.ShouldNotContain("Error: There are errors in your Asyncapi document",
+            Case.Insensitive,
+            "UI should not display AsyncAPI schema validation errors for documents with operations. " +
+            "This may fail until ASP.NET async bindings are updated.");
+
+        await page.CloseAsync();
+    }
+
+    private async Task StartServerWithOperationsAsync()
+    {
+        // Stop previous host if running
+        if (_host != null)
+        {
+            await _host.StopAsync();
+            _host.Dispose();
+        }
+
+        // Find an available port
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        _baseUrl = $"http://localhost:{port}";
+
+        _host = Host.CreateDefaultBuilder()
+            .ConfigureWebHostDefaults(webBuilder =>
+            {
+                webBuilder.UseUrls(_baseUrl);
+                webBuilder.ConfigureServices(services =>
+                {
+                    services.AddControllers();
+                    services.AddAsyncApi(options =>
+                    {
+                        // Configure servers
+                        options.AddServer("webapi", "localhost:5000", "http", server =>
+                        {
+                            server.Description = "Local HTTP API Server";
+                        });
+                        options.AddServer("mqtt-broker", "mqtt.example.com", "mqtt", server =>
+                        {
+                            server.Description = "MQTT Message Broker";
+                        });
+                        
+                        options.WithInfo("API with Operations", "1.0.0");
+                        options.WithDescription("API that includes publish/subscribe operations with HTTP bindings");
+                        options.WithDefaultContentType("application/json");
+                        
+                        // Add HTTP operation binding similar to StreetlightsAPI
+                        options.AddOperationBinding("httpPost",
+                            new ByteBard.AsyncAPI.Bindings.Http.HttpOperationBinding
+                            {
+                                Method = "POST",
+                                Type = ByteBard.AsyncAPI.Bindings.Http.HttpOperationBinding.HttpOperationType.Request
+                            });
+                        
+                        // Add AMQP channel binding
+                        options.AddChannelBinding("amqpQueue",
+                            new ByteBard.AsyncAPI.Bindings.AMQP.AMQPChannelBinding
+                            {
+                                Is = ByteBard.AsyncAPI.Bindings.AMQP.ChannelType.Queue,
+                                Queue = new ByteBard.AsyncAPI.Bindings.AMQP.Queue 
+                                { 
+                                    Name = "test-queue",
+                                    Vhost = "/development"
+                                }
+                            });
+                    });
+                    services.AddRouting();
+                });
+                webBuilder.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapAsyncApi();
+                        endpoints.MapAsyncApiUi();
+                        endpoints.MapControllers();
+                    });
+                });
+            })
+            .Build();
+
+        await _host.StartAsync();
+    }
+
+    private async Task StartServerAsync(Action<AsyncApiOptions>? configureOptions = null)
+    {
+        // Stop previous host if running
+        if (_host != null)
+        {
+            await _host.StopAsync();
+            _host.Dispose();
+        }
+
+        // Find an available port
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        _baseUrl = $"http://localhost:{port}";
+
+        _host = Host.CreateDefaultBuilder()
+            .ConfigureWebHostDefaults(webBuilder =>
+            {
+                webBuilder.UseUrls(_baseUrl);
+                webBuilder.ConfigureServices(services =>
+                {
+                    services.AddControllers();
+                    services.AddAsyncApi(options =>
+                    {
+                        options.AddServer("test-server", "localhost", "http");
+                        options.WithInfo("Test API", "1.0.0");
+                        configureOptions?.Invoke(options);
+                    });
+                    services.AddRouting();
+                });
+                webBuilder.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapAsyncApi();
+                        endpoints.MapAsyncApiUi();
+                    });
+                });
+            })
+            .Build();
+
+        await _host.StartAsync();
     }
 
     private static async Task<IHost> CreateTestHostWithUiAsync(Action<AsyncApiOptions>? configureOptions = null)

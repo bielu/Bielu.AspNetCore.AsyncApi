@@ -109,6 +109,124 @@ public class AsyncApiUiIntegrationTests : IAsyncLifetime
         content.ShouldContain(".json");
     }
 
+    /// <summary>
+    /// Tests that the AsyncAPI document URL in the UI HTML is correctly constructed
+    /// and that the document can be fetched from that URL.
+    /// This verifies the document is properly placed into the UI configuration.
+    /// </summary>
+    [Fact]
+    public async Task AsyncApiUi_DocumentUrlIsAccessibleFromBrowser()
+    {
+        // Arrange
+        await StartServerAsync();
+        var page = await _browser!.NewPageAsync();
+        string? capturedDocumentJson = null;
+        string? capturedUrl = null;
+        int? capturedStatus = null;
+
+        // Use route interception to capture the exact document response
+        await page.RouteAsync("**/asyncapi/*.json", async route =>
+        {
+            capturedUrl = route.Request.Url;
+            var response = await route.FetchAsync();
+            capturedStatus = response.Status;
+            capturedDocumentJson = await response.TextAsync();
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                Response = response
+            });
+        });
+
+        // Act - Navigate to the UI page
+        var htmlResponse = await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        // Wait for any async document fetching
+        await page.WaitForTimeoutAsync(2000);
+
+        // Assert - Verify the HTML loaded correctly
+        htmlResponse.ShouldNotBeNull();
+        htmlResponse.Ok.ShouldBeTrue("HTML page should load successfully");
+
+        // Check that the document URL was requested and returned successfully
+        capturedUrl.ShouldNotBeNullOrEmpty("The UI should fetch the AsyncAPI document from the URL");
+        capturedStatus.ShouldBe(200, $"AsyncAPI document should be fetched successfully. URL: {capturedUrl}");
+        capturedDocumentJson.ShouldNotBeNullOrEmpty($"Document body should not be empty. URL: {capturedUrl}");
+        
+        // Verify the document body contains valid AsyncAPI content
+        capturedDocumentJson.ShouldContain("asyncapi", 
+            customMessage: $"Document should contain 'asyncapi' field. This verifies the document is properly placed into the UI. URL: {capturedUrl}");
+
+        await page.CloseAsync();
+    }
+
+    /// <summary>
+    /// Tests that the AsyncAPI document is correctly injected into the React component
+    /// and that it can parse the document without errors.
+    /// This test intercepts the network request to see exactly what the UI receives.
+    /// </summary>
+    [Fact]
+    public async Task AsyncApiUi_DocumentIsCorrectlyServedToReactComponent()
+    {
+        // Arrange
+        await StartServerAsync(options =>
+        {
+            options.AsyncApiVersion = ByteBard.AsyncAPI.AsyncApiVersion.AsyncApi3_0;
+            options.AddServer("test-server", "localhost:5000", "http");
+            options.WithInfo("Test API for UI", "1.0.0");
+            options.WithDescription("Testing document injection into UI");
+        });
+
+        var page = await _browser!.NewPageAsync();
+        string? capturedDocumentJson = null;
+
+        // Intercept the document fetch to capture exactly what the UI receives
+        await page.RouteAsync("**/asyncapi/*.json", async route =>
+        {
+            var response = await route.FetchAsync();
+            capturedDocumentJson = await response.TextAsync();
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                Response = response
+            });
+        });
+
+        // Act
+        await page.GotoAsync($"{_baseUrl}/async-api", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 30000
+        });
+
+        await page.WaitForTimeoutAsync(2000);
+
+        // Assert
+        capturedDocumentJson.ShouldNotBeNullOrEmpty("UI should fetch the AsyncAPI document");
+        
+        // Verify the document is valid JSON with asyncapi field
+        capturedDocumentJson.ShouldContain("\"asyncapi\"", 
+            customMessage: "Document should contain asyncapi field as JSON property");
+        
+        // Parse and validate with ByteBard
+        var reader = new AsyncApiStringReader();
+        var document = reader.Read(capturedDocumentJson, out var diagnostic);
+        
+        document.ShouldNotBeNull("Document served to UI should be parseable");
+        
+        // Log the document content for debugging
+        var errorCount = diagnostic?.Errors?.Count() ?? 0;
+        if (errorCount > 0)
+        {
+            var errors = string.Join(Environment.NewLine, diagnostic!.Errors.Select(e => $"- {e.Message}"));
+            Assert.Fail($"Document served to UI has validation errors:{Environment.NewLine}{errors}{Environment.NewLine}{Environment.NewLine}Document content:{Environment.NewLine}{capturedDocumentJson}");
+        }
+
+        await page.CloseAsync();
+    }
+
     [Fact]
     public async Task AsyncApiUi_DocumentIsValidForUiRendering()
     {

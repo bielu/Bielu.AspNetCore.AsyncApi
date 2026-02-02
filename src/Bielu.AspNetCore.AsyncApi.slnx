@@ -7,6 +7,9 @@
   <Folder Name="/examples/">
     <Project Path="./examples/StreetlightsAPI/StreetlightsAPI.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="../test/Bielu.AspNetCore.AsyncApi.Tests/Bielu.AspNetCore.AsyncApi.Tests.csproj" />
+  </Folder>
   <Folder Name="/Solution Files/">
     <File Path="../.dockerignore" />
     <File Path="../.editorconfig" />

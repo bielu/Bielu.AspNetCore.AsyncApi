@@ -19,7 +19,10 @@ namespace Bielu.AspNetCore.AsyncApi.Tests.Integration;
 /// </summary>
 public class AsyncApiDocumentGenerationTests
 {
-    private const string DefaultDocumentRoute = "/asyncapi/asyncapi.json";
+    private const string TestDocumentName = "asyncapi";
+    
+    private static string GetDocumentRoute(string documentName) => 
+        AsyncApiGeneratorConstants.DefaultAsyncApiRoute.Replace("{documentName}", documentName);
 
     [Fact]
     public async Task GetAsyncApiDocument_ReturnsValidJsonDocument()
@@ -29,7 +32,7 @@ public class AsyncApiDocumentGenerationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(TestDocumentName));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -51,7 +54,7 @@ public class AsyncApiDocumentGenerationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(TestDocumentName));
         var content = await response.Content.ReadAsStringAsync();
         var jsonDocument = JsonDocument.Parse(content);
 
@@ -78,7 +81,7 @@ public class AsyncApiDocumentGenerationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(TestDocumentName));
         var content = await response.Content.ReadAsStringAsync();
         var jsonDocument = JsonDocument.Parse(content);
 
@@ -103,7 +106,7 @@ public class AsyncApiDocumentGenerationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(TestDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert - Parse with ByteBard.AsyncAPI.NET reader to validate schema
@@ -129,7 +132,7 @@ public class AsyncApiDocumentGenerationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(TestDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         // Parse with ByteBard reader
@@ -165,8 +168,8 @@ public class AsyncApiDocumentGenerationTests
         var client = host.GetTestClient();
 
         // Act
-        var responseLower = await client.GetAsync(DefaultDocumentRoute);
-        var responseUpper = await client.GetAsync("/asyncapi/ASYNCAPI.json");
+        var responseLower = await client.GetAsync(GetDocumentRoute(TestDocumentName));
+        var responseUpper = await client.GetAsync(GetDocumentRoute(TestDocumentName.ToUpperInvariant()));
 
         // Assert
         responseLower.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -182,7 +185,7 @@ public class AsyncApiDocumentGenerationTests
                 webBuilder.ConfigureServices(services =>
                 {
                     services.AddControllers();
-                    services.AddAsyncApi("asyncapi", options =>
+                    services.AddAsyncApi(TestDocumentName, options =>
                     {
                         options.AddServer("test-server", "localhost:5000", "http");
                         options.WithInfo("Test API", "1.0.0");

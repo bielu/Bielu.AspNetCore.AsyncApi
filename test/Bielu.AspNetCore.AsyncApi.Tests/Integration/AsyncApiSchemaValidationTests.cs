@@ -21,7 +21,8 @@ namespace Bielu.AspNetCore.AsyncApi.Tests.Integration;
 /// </summary>
 public class AsyncApiSchemaValidationTests
 {
-    private const string DefaultDocumentRoute = "/asyncapi/v1.json";
+    private static string GetDocumentRoute(string documentName) => 
+        AsyncApiGeneratorConstants.DefaultAsyncApiRoute.Replace("{documentName}", documentName);
 
     [Fact]
     public async Task GeneratedDocument_CanBeSerializedAndDeserializedAsV3()
@@ -37,7 +38,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         // Parse with ByteBard reader
@@ -72,7 +73,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         // Parse with ByteBard reader
@@ -103,7 +104,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
         var jsonDocument = JsonDocument.Parse(content);
 
@@ -129,7 +130,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         var reader = new AsyncApiStringReader();
@@ -163,7 +164,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         var reader = new AsyncApiStringReader();
@@ -196,7 +197,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         var reader = new AsyncApiStringReader();
@@ -225,7 +226,7 @@ public class AsyncApiSchemaValidationTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         var reader = new AsyncApiStringReader();

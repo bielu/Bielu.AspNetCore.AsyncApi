@@ -18,7 +18,8 @@ namespace Bielu.AspNetCore.AsyncApi.Tests.Integration;
 /// </summary>
 public class AsyncApiEndpointTests
 {
-    private const string DefaultDocumentRoute = "/asyncapi/v1.json";
+    private static string GetDocumentRoute(string documentName) => 
+        AsyncApiGeneratorConstants.DefaultAsyncApiRoute.Replace("{documentName}", documentName);
 
     [Fact]
     public async Task MapAsyncApi_DefaultRoute_ReturnsDocument()
@@ -28,7 +29,7 @@ public class AsyncApiEndpointTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -43,7 +44,7 @@ public class AsyncApiEndpointTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync("/asyncapi/v1.yaml");
+        var response = await client.GetAsync($"/asyncapi/{AsyncApiGeneratorConstants.DefaultDocumentName}.yaml");
 
         // Assert
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -72,7 +73,7 @@ public class AsyncApiEndpointTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -88,8 +89,8 @@ public class AsyncApiEndpointTests
         var client = host.GetTestClient();
 
         // Act
-        var responseLower = await client.GetAsync("/asyncapi/v1.json");
-        var responseUpper = await client.GetAsync("/asyncapi/V1.json");
+        var responseLower = await client.GetAsync($"/asyncapi/{AsyncApiGeneratorConstants.DefaultDocumentName}.json");
+        var responseUpper = await client.GetAsync($"/asyncapi/{AsyncApiGeneratorConstants.DefaultDocumentName.ToUpperInvariant()}.json");
 
         // Assert
         responseLower.StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -107,7 +108,7 @@ public class AsyncApiEndpointTests
         var client = host.GetTestClient();
 
         // Act
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         var content = await response.Content.ReadAsStringAsync();
         var jsonDoc = JsonDocument.Parse(content);
 
@@ -153,7 +154,7 @@ public class AsyncApiEndpointTests
         // Act & Assert
         // The endpoint should work but be excluded from OpenAPI description
         // This is verified by the ExcludeFromDescription() call in the implementation
-        var response = await client.GetAsync(DefaultDocumentRoute);
+        var response = await client.GetAsync(GetDocumentRoute(AsyncApiGeneratorConstants.DefaultDocumentName));
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 

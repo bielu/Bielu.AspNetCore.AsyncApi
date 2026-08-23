@@ -54,7 +54,13 @@ internal sealed class AsyncApiJsonSchemaService
         _documentName = documentName;
         _optionsMonitor = optionsMonitor;
         _xmlDocumentationProvider = serviceProvider.GetRequiredKeyedService<XmlDocumentationProvider>(documentName);
-        _jsonSchemaContext = new AsyncApiJsonSchemaContext(new(jsonOptions.Value.SerializerOptions));
+        var schemaContextOptions = new JsonSerializerOptions(jsonOptions.Value.SerializerOptions);
+        // Without this, any exported schema containing AsyncApiAny (an enum's "enum" keyword, a
+        // "default", a "const", ...) throws JsonException the moment that property is populated —
+        // AsyncApiAny has no parameterless constructor for the default converter to use. See
+        // AsyncApiAnyJsonConverter's own remarks.
+        schemaContextOptions.Converters.Add(new AsyncApiAnyJsonConverter());
+        _jsonSchemaContext = new AsyncApiJsonSchemaContext(schemaContextOptions);
         _jsonSerializerOptions = new JsonSerializerOptions(jsonOptions.Value.SerializerOptions)
         {
             // In order to properly handle the `RequiredAttribute` on type properties, add a modifier to support

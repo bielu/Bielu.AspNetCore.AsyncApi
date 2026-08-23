@@ -19,6 +19,12 @@ This project is a fork/evolution of [Saunter](https://github.com/asyncapi/saunte
 
 _Nothing yet._
 
+## [1.0.2] - 2026-08-23
+
+### Patch Changes
+
+- [#68](https://github.com/bielu/Bielu.AspNetCore.ApiDescriptions/pull/68) [`573cc66`](https://github.com/bielu/Bielu.AspNetCore.ApiDescriptions/commit/573cc66c48b6f1215c078f6c128b05bec9c1c73d) Thanks [@bielu](https://github.com/bielu)! - Fix `AsyncApiJsonSchemaService` throwing when a documented message type has a property that produces the JSON Schema `"enum"` keyword — most commonly an enum serialized with `JsonStringEnumConverter`. `System.Text.Json.Schema.JsonSchemaExporter` emits that keyword as a plain array of values, but the generated schema's `Enum` property is typed `IList<AsyncApiAny>`, and no `JsonConverter` was registered for `AsyncApiAny` anywhere in the schema-deserialization pipeline used by `AsyncApiJsonSchemaService`, so `JsonSerializer.Deserialize` threw `JsonException` the moment that keyword appeared — for any consumer whose documented AsyncAPI message contained an enum property. Adds `AsyncApiAnyJsonConverter` and registers it on the `JsonSerializerOptions` used to build `AsyncApiJsonSchemaContext`.
+
 ## [1.0.1] - 2026-08-08
 
 ### Patch Changes
